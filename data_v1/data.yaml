@@ -1,0 +1,8 @@
+version: v1
+date: 2026-09-08
+path: /home/altamedia/Documents/Quang_Ai/data_v1
+train: images/train
+val: images/val
+test: images/test
+nc: 8
+names: ['motorbike_day', 'car_day', 'bus_day', 'truck_day', 'motorbike_night', 'car_night', 'bus_night', 'truck_night']

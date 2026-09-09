@@ -1,0 +1,48 @@
+# ================= Python =================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# ================= IDE / OS =================
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# ================= Weights & training output =================
+# File nang (MB-GB), tai/luu rieng tren server train, khong commit
+*.pt
+*.onnx
+*.engine
+*.tflite
+weights/
+runs/
+*.log
+
+# ================= Dataset anh/label =================
+# Anh + label nang (GB), version rieng tren server.
+# Chi giu data.yaml (cau hinh nhe) de tai lap.
+data_*/images/
+data_*/labels/
+datasets/
+assets/
+# ================= Runtime output =================
+# Anh minh chung vi pham sinh ra khi chay pipeline
+evidence/
+out/
+vis_*.jpg
+capture_*.jpg
+
+# ================= Video =================
+# Video test nang, khong commit (xem bang link/stream)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.md
+
