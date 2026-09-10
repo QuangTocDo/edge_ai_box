@@ -7,7 +7,7 @@ lam tool tu tao line rac + cuop selection. Giai phap:
 """
 import math
 
-from .line_config import add_directed, add_divider, add_pair
+from .line_config import add_directed, add_divider, add_pair, iter_all_lines
 
 CREATE_DELAY_S = 0.35  # doi double-click di qua roi moi tao line
 DBL_WINDOW_S = 0.5     # click don trong window nay truoc dblclk thi huy
@@ -46,7 +46,7 @@ class DrawState:
     def on_down(self, x, y, now):
         """Tra ve action (kind, payload) de GUI hien thi/log."""
         if self.mode == "pair":
-            ln = nearest_line(self.cfg["lines"], x, y)
+            ln = nearest_line(list(iter_all_lines(self.cfg)), x, y)
             if ln is None:
                 return ("pair_miss", None)
             self.picks.append(ln["id"])
@@ -66,7 +66,7 @@ class DrawState:
         """Huy clicks vua nhan (cua thao tac double) roi chon line."""
         self.clicks = [c for c in self.clicks if now - c[2] > DBL_WINDOW_S]
         self.picks.clear()
-        self.selected = nearest_line(self.cfg["lines"], x, y)
+        self.selected = nearest_line(list(iter_all_lines(self.cfg)), x, y)
         return ("selected", self.selected["id"] if self.selected else None)
 
     def poll(self, now):

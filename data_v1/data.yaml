@@ -1,6 +1,7 @@
 version: v1
 date: 2026-09-08
-path: /home/altamedia/Documents/Quang_Ai/data_v1
+# Khong co `path:` -> ultralytics tu lay thu muc chua file yaml nay
+# (data_v1/) lam goc -> chay dung tren moi may, khong sua theo tung host.
 train: images/train
 val: images/val
 test: images/test

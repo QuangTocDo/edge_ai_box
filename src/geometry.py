@@ -58,3 +58,85 @@ def dot(ax, ay, bx, by):
 
 def dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def _on_segment(px, py, ax, ay, bx, by):
+    return (min(ax, bx) - 1e-9 <= px <= max(ax, bx) + 1e-9
+            and min(ay, by) - 1e-9 <= py <= max(ay, by) + 1e-9
+            and abs(_cross(bx - ax, by - ay, px - ax, py - ay)) < 1e-9)
+
+
+def point_in_polygon(pt, poly):
+    """True neu diem trong polygon (tinh ca bien). Ray-casting truc X+."""
+    x, y = pt
+    n = len(poly)
+    if n < 3:
+        return False
+    for i in range(n):
+        ax, ay = poly[i]
+        bx, by = poly[(i + 1) % n]
+        if _on_segment(x, y, ax, ay, bx, by):
+            return True
+    inside = False
+    for i in range(n):
+        ax, ay = poly[i]
+        bx, by = poly[(i + 1) % n]
+        if (ay > y) != (by > y):
+            xin = ax + (bx - ax) * (y - ay) / (by - ay)
+            if x < xin:
+                inside = not inside
+    return inside
+
+
+def containing_polygons(pt, polygons):
+    """Cac polygon chua diem (theo Bottom-Center)."""
+    return [p for p in polygons
+            if point_in_polygon(pt, p.get("polygon", []))]
+
+
+def polygon_valid(poly):
+    """>=3 dinh + dien tich > 0 (loai tu cat don gian)."""
+    if len(poly) < 3:
+        return False
+    area = sum(poly[i][0] * poly[(i + 1) % len(poly)][1]
+               - poly[(i + 1) % len(poly)][0] * poly[i][1]
+               for i in range(len(poly)))
+    return abs(area) > 1e-9
+
+
+def parse_window(s):
+    """'18:00-05:00' -> (1080, 300) phut. Cho phep qua dem (start > end)."""
+    try:
+        a, b = s.split("-")
+        def to_min(x):
+            h, m = x.strip().split(":")
+            return int(h) * 60 + int(m)
+        s0, e0 = to_min(a), to_min(b)
+        if not (0 <= s0 < 1440 and 0 <= e0 < 1440):
+            raise ValueError
+        return (s0, e0)
+    except Exception:
+        raise ValueError(f"Khung gio sai format HH:MM-HH:MM: {s!r}")
+
+
+def in_active_hours(now_min, windows):
+    """now_min: so phut tu 0h. windows: list (start, end)."""
+    for s, e in windows:
+        if s <= e:
+            if s <= now_min <= e:
+                return True
+        elif now_min >= s or now_min <= e:  # qua dem
+            return True
+    return False
+
+
+def now_minutes(tzname="Asia/Ho_Chi_Minh"):
+    """Phut hien tai theo gio edge. Fallback UTC+7 neu thieu tzdata."""
+    from datetime import datetime, timedelta, timezone
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tzname)
+    except Exception:
+        tz = timezone(timedelta(hours=7))
+    now = datetime.now(tz)
+    return now.hour * 60 + now.minute

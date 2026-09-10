@@ -7,7 +7,7 @@ from ultralytics import YOLO
 
 VIDEO_PATH = sys.argv[1] if len(sys.argv) > 1 else "assets/video.mp4"
 
-model = YOLO("weights/yolo26n.pt")  # lan dau tu tai ve
+model = YOLO("weights/yolo12n.pt")  # lan dau tu tai ve
 cap = cv2.VideoCapture(VIDEO_PATH)
 if not cap.isOpened():
     raise SystemExit(f"Khong mo duoc file: {VIDEO_PATH}")

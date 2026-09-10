@@ -1,5 +1,5 @@
-"""Rule Engine: wrong_way (§4.1) + no_uturn (§4.3) theo PROJECT_PLAN.md."""
-from .geometry import allowed_vec, crossing_sign, dot
+"""Rule Engine: wrong_way (§4.1) + no_uturn (§4.3) + no_entry_road (§4.2)."""
+from .geometry import allowed_vec, crossing_sign, dot, point_in_polygon
 
 
 def _cooldown_ok(track, vtype, t):
@@ -118,4 +118,64 @@ class NoUTurnRule:
                               "velocity_inverted": dot(
                                   v_exit[0], v_exit[1],
                                   v_entry[0], v_entry[1]) < 0}}
+        return None
+
+
+class NoEntryRule:
+    """Zone duong cam (CHOT don gian): vao zone + o du dwell -> VIOLATION.
+
+    - Ngoai active_hours hoac class khong cam -> bo qua ngay.
+    - Vao (ngoai->trong) hoac moc san trong zone: bat dau tinh dwell.
+      Khong yeu cau entry line, khong xet huong chuyen dong.
+    - O lien tuc >= dwell_s -> bao 1 lan/dot hien dien. Ra ngoai -> reset.
+    - t: giay video (frame_idx/fps). wall_min: phut hien tai theo gio edge.
+    """
+
+    TYPE = "no_entry_road"
+
+    def __init__(self, dwell_s=2.0, min_hits=3, cooldown_s=10.0):
+        self.dwell_s = dwell_s
+        self.min_hits = min_hits
+        self.cooldown_s = cooldown_s
+
+    @staticmethod
+    def _windows(polygon):
+        from .geometry import parse_window
+        if polygon.get("_windows") is not None:
+            return polygon["_windows"]
+        return [parse_window(w) for w in polygon.get("active_hours", [])]
+
+    def update(self, track, polygon, wall_min, frame_idx, t):
+        from .geometry import in_active_hours
+        pid = polygon["id"]
+        if self._windows(polygon) and not in_active_hours(
+                wall_min, self._windows(polygon)):
+            track.zones.pop(pid, None)  # ngoai gio cam -> reset
+            return None
+        dwell = float(polygon.get("dwell_s", self.dwell_s))
+        if track.cls not in polygon.get("banned_classes", []):
+            track.zones.pop(pid, None)
+            return None
+        if len(track.pts) < 1 or track.hits < self.min_hits:
+            return None
+        curr = track.pts[-1]
+        if not point_in_polygon(curr, polygon.get("polygon", [])):
+            track.zones.pop(pid, None)  # ra ngoai -> reset
+            return None
+        zs = track.zones.get(pid)
+        if zs is None or not zs["inside"]:
+            track.zones[pid] = {"inside": True, "enter_t": t,
+                                "fired": False}
+            return None
+        if not zs["fired"] and t - zs["enter_t"] >= dwell \
+                and _cooldown_ok(track, self.TYPE, t):
+            zs["fired"] = True
+            track.cooldowns[self.TYPE] = t + self.cooldown_s
+            return {"type": self.TYPE, "track_id": track.tid,
+                    "cls": track.cls, "conf": track.conf,
+                    "bbox": track.bbox, "bc": curr,
+                    "line_id": pid, "frame_idx": frame_idx, "t": t,
+                    "extra": {"zone_id": pid,
+                              "dwell_s": round(t - zs["enter_t"], 2),
+                              "banned_classes": polygon.get("banned_classes", [])}}
         return None

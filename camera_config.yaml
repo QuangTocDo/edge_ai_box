@@ -1,9 +1,10 @@
 camera_id: CAM_TEST_01
-config_version: cfg_v1
+config_version: cfg_v2
+timezone: Asia/Ho_Chi_Minh
 model:
   weights: weights/yolo26n.pt
   conf: 0.4
-  imgsz: 640
+  imgsz: 1920
   classes:
   - 1
   - 2
@@ -12,30 +13,23 @@ model:
   - 7
   tracker: ocsort.yaml
   device: null
+polygons: []
 lines:
 - id: L1
   p1:
-  - 210
-  - 145
+  - 141
+  - 182
   p2:
-  - 821
-  - 159
+  - 760
+  - 184
   allowed_sign: 1
 - id: L2
   p1:
-  - 844
-  - 160
+  - 784
+  - 185
   p2:
-  - 1242
-  - 169
-  allowed_sign: -1
-- id: L3
-  p1:
-  - 1359
-  - 410
-  p2:
-  - 1249
-  - 77
+  - 1255
+  - 194
   allowed_sign: -1
 uturn_pairs: []
 wrong_way:
@@ -49,6 +43,10 @@ no_uturn:
   - 12.0
   require_velocity_inversion: true
   require_medial: true
+  min_hits: 3
+  cooldown_s: 10.0
+no_entry_road:
+  dwell_s: 2.0
   min_hits: 3
   cooldown_s: 10.0
 evidence:

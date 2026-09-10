@@ -26,6 +26,8 @@ class TrackState:
         self.reverse = {}
         # violation_type -> thoi diem het cooldown (giay)
         self.cooldowns = {}
+        # zone_id -> {inside, enter_t, via_entry} cho no_entry_road
+        self.zones = {}
 
     def update(self, cls, conf, bc, bbox, frame_idx):
         prev = self.pts[-1]
