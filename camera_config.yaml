@@ -13,24 +13,75 @@ model:
   - 7
   tracker: ocsort.yaml
   device: null
-polygons: []
+polygons:
+- id: POLY_1
+  kind: directional
+  polygon:
+  - - 553
+    - 296
+  - - 555
+    - 412
+  - - 535
+    - 595
+  - - 514
+    - 714
+  - - 735
+    - 712
+  - - 730
+    - 596
+  - - 716
+    - 489
+  - - 690
+    - 372
+  - - 660
+    - 278
+  - - 567
+    - 148
+  - - 499
+    - 163
+  - - 540
+    - 240
+  - - 552
+    - 294
+  lines:
+  - id: L1
+    p1:
+    - 543
+    - 253
+    p2:
+    - 622
+    - 226
+    allowed_sign: 1
+  - id: L2
+    p1:
+    - 547
+    - 494
+    p2:
+    - 713
+    - 482
+    allowed_sign: 1
+  handler:
+  - wrong_way
+  - no_uturn
+  rules:
+    wrong_way:
+      enable: true
+    no_uturn:
+      enable: true
+  uturn_pairs:
+  - first: L1
+    second: L2
+  - first: L2
+    second: L1
 lines:
-- id: L1
+- id: L3
   p1:
-  - 141
-  - 182
+  - 176
+  - 403
   p2:
-  - 760
-  - 184
+  - 494
+  - 415
   allowed_sign: 1
-- id: L2
-  p1:
-  - 784
-  - 185
-  p2:
-  - 1255
-  - 194
-  allowed_sign: -1
 uturn_pairs: []
 wrong_way:
   min_hits: 3
@@ -38,11 +89,6 @@ wrong_way:
   min_reverse_px: 60.0
   cooldown_s: 10.0
 no_uturn:
-  time_window_s:
-  - 2.0
-  - 12.0
-  require_velocity_inversion: true
-  require_medial: true
   min_hits: 3
   cooldown_s: 10.0
 no_entry_road:

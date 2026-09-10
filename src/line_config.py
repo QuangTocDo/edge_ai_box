@@ -47,7 +47,7 @@ def find_line(cfg, lid):
 
 
 def next_id(cfg, prefix="L"):
-    used = {ln["id"] for ln in get_lines(cfg)}
+    used = {ln["id"] for ln in iter_all_lines(cfg)}
     i = 1
     while f"{prefix}{i}" in used:
         i += 1
@@ -56,7 +56,7 @@ def next_id(cfg, prefix="L"):
 
 def add_directed(cfg, p1, p2, allowed_sign=1, lid=None):
     lid = lid or next_id(cfg)
-    if find_line(cfg, lid):
+    if find_line_any(cfg, lid)[0] is not None:
         raise ValueError(f"Trung id: {lid}")
     ln = {"id": lid, "p1": [int(p1[0]), int(p1[1])],
           "p2": [int(p2[0]), int(p2[1])], "allowed_sign": int(allowed_sign)}
@@ -66,7 +66,7 @@ def add_directed(cfg, p1, p2, allowed_sign=1, lid=None):
 
 def add_divider(cfg, p1, p2, lid=None):
     lid = lid or next_id(cfg)
-    if find_line(cfg, lid):
+    if find_line_any(cfg, lid)[0] is not None:
         raise ValueError(f"Trung id: {lid}")
     ln = {"id": lid, "p1": [int(p1[0]), int(p1[1])],
           "p2": [int(p2[0]), int(p2[1])], "role": DIVIDER}
@@ -84,32 +84,72 @@ def flip_line(cfg, lid):
     return ln["allowed_sign"]
 
 
+def _all_pair_lists(cfg):
+    yield get_pairs(cfg)
+    for p in get_polygons(cfg):
+        yield p.setdefault("uturn_pairs", [])
+
+
 def delete_line(cfg, lid):
     ln, owner = find_line_any(cfg, lid)
     if ln is None:
         raise ValueError(f"Khong thay line: {lid}")
     (owner.get("lines", []) if owner else get_lines(cfg)).remove(ln)
-    dropped = [p for p in get_pairs(cfg)
-               if lid in (p.get("first"), p.get("second"), p.get("medial"))]
-    for p in dropped:
-        get_pairs(cfg).remove(p)
+    dropped = []
+    for lst in _all_pair_lists(cfg):
+        for p in [x for x in lst if lid in (x.get("first"), x.get("second"),
+                                            x.get("medial"))]:
+            lst.remove(p)
+            dropped.append(p)
     return ln, dropped
 
 
-def add_pair(cfg, first, second, medial):
-    f1, f2, fm = (find_line(cfg, x) for x in (first, second, medial))
-    if f1 is None or f2 is None or fm is None:
-        missing = [x for x, f in ((first, f1), (second, f2), (medial, fm))
-                   if f is None]
+def line_length(ln):
+    """Do dai doan thang cua line (px)."""
+    (x1, y1), (x2, y2) = ln["p1"], ln["p2"]
+    return ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+
+
+def remove_tiny_lines(cfg, min_px=10.0):
+    """Xoa lines ngan hon min_px (rac tu double-click cham).
+    Tra ve [ids da xoa]. Pair lien quan rot theo nhu delete_line."""
+    tiny = [ln["id"] for ln in iter_all_lines(cfg)
+            if line_length(ln) < min_px]
+    for lid in tiny:
+        delete_line(cfg, lid)
+    return tiny
+
+
+def add_pair(cfg, first, second, medial=None):
+    """Tao pair U-turn: cat first dung chieu -> second dung chieu.
+    first/second phai chung scope (tat ca top-level hoac cung 1 polygon).
+    medial (ten line divider) la DI SAN cu: chap nhan de tuong thich,
+    rule hien tai bo qua."""
+    f1, o1 = find_line_any(cfg, first)
+    f2, o2 = find_line_any(cfg, second)
+    if None in (f1, f2):
+        missing = [x for x, f in ((first, f1), (second, f2)) if f is None]
         raise ValueError(f"Chua ve: {missing}")
     if role_of(f1) == DIVIDER or role_of(f2) == DIVIDER:
         raise ValueError("first/second phai la line co chieu")
-    if role_of(fm) != DIVIDER:
-        raise ValueError("medial phai la divider")
-    pr = {"first": first, "second": second, "medial": medial}
-    if pr in get_pairs(cfg):
+    if o1 is not o2:
+        raise ValueError("first/second phai chung 1 polygon "
+                         "(hoac ca hai top-level)")
+    fm = None
+    if medial is not None:
+        fm, _ = find_line_any(cfg, medial)
+        if fm is None:
+            raise ValueError(f"Chua ve: [{medial}]")
+        if role_of(fm) != DIVIDER:
+            raise ValueError("medial phai la divider")
+    pr = {"first": first, "second": second}
+    if medial is not None:
+        pr["medial"] = medial  # di san: rule bo qua, strip_medial.py se don
+    target = o1.setdefault("uturn_pairs", []) if o1 is not None \
+        else get_pairs(cfg)
+    if pr in target:
         raise ValueError("Pair da ton tai")
-    get_pairs(cfg).append(pr)
+    target.append(pr)
     return pr
 
 
@@ -120,19 +160,55 @@ def delete_pair(cfg, idx):
     return pairs.pop(idx)
 
 
+def finalize_zone(cfg, poly_id, no_uturn):
+    """Chot zone sau flow ve gop: wrong_way luon bat; no_uturn tuy flag.
+
+    - Dat rules.wrong_way.enable=True, rules.no_uturn.enable=bool(no_uturn).
+    - Neu no_uturn: lay 2 directed lines dau tien trong polygon, tu sinh
+      ca 2 pairs nguoc chieu (A->B va B->A). Goi lai khong tao trung.
+    Tra ve {"polygon": pid, "lines": [...], "pairs": [...]}.
+    """
+    poly = find_polygon(cfg, poly_id)
+    if poly is None:
+        raise ValueError(f"Khong thay polygon: {poly_id}")
+    directed = [ln for ln in poly.get("lines", [])
+                if role_of(ln) != "divider"]
+    if len(directed) < 2:
+        raise ValueError(f"Polygon {poly_id} can >=2 lines co chieu "
+                         f"(dang co {len(directed)})")
+    rules = poly.setdefault("rules", {})
+    rules["wrong_way"] = {"enable": True}
+    rules["no_uturn"] = {"enable": bool(no_uturn)}
+    made = []
+    if no_uturn:
+        a, b = directed[0]["id"], directed[1]["id"]
+        for first, second in ((a, b), (b, a)):
+            try:
+                made.append(add_pair(cfg, first, second))
+            except ValueError as e:
+                if "da ton tai" not in str(e):
+                    raise
+    return {"polygon": poly_id,
+            "lines": [ln["id"] for ln in directed[:2]],
+            "pairs": [(p["first"], p["second"]) for p in made]}
+
+
 def validate(cfg):
     """Tra ve list canh bao (rong = sach). Pipeline van chay duoc."""
     warns = []
-    ids = [ln["id"] for ln in get_lines(cfg)]
+    ids = [ln["id"] for ln in iter_all_lines(cfg)]
     if len(ids) != len(set(ids)):
-        warns.append("Trung id line")
+        warns.append("Trung id line (tinh ca nested)")
     for ln in get_lines(cfg):
         if role_of(ln) != DIVIDER and ln.get("allowed_sign", 1) not in (1, -1):
             warns.append(f"{ln['id']}: allowed_sign la")
     for p in get_pairs(cfg):
-        for k in ("first", "second", "medial"):
-            if find_line(cfg, p.get(k)) is None:
+        for k in ("first", "second"):
+            if find_line_any(cfg, p.get(k))[0] is None:
                 warns.append(f"Pair thieu line: {k}={p.get(k)}")
+        if p.get("medial") is not None and \
+                find_line_any(cfg, p.get("medial"))[0] is None:
+            warns.append(f"Pair thieu medial cu: {p.get('medial')}")
     if not get_lines(cfg) and not get_polygons(cfg):
         warns.append("Chua co line/polygon nao (pipeline chay nhung khong rule nao kich hoat)")
     return warns
@@ -198,11 +274,12 @@ def delete_polygon(cfg, pid):
     get_polygons(cfg).remove(poly)
     nested = {ln["id"] for ln in poly.get("lines", [])}
     nested |= {e["id"] for e in poly.get("entry_lines", [])}
-    dropped = [p for p in get_pairs(cfg)
-               if pid in () or p.get("first") in nested
-               or p.get("second") in nested or p.get("medial") in nested]
-    for p in dropped:
-        get_pairs(cfg).remove(p)
+    dropped = []
+    for lst in _all_pair_lists(cfg):
+        for p in [x for x in lst if x.get("first") in nested
+                  or x.get("second") in nested or x.get("medial") in nested]:
+            lst.remove(p)
+            dropped.append(p)
     return poly, dropped
 
 
@@ -282,7 +359,15 @@ def validate_polygons(cfg):
                 except ValueError as e:
                     warns.append(f"{p.get('id')}: {e}")
     for pr in get_pairs(cfg):
-        for k in ("first", "second", "medial"):
+        for k in ("first", "second"):
             if find_line_any(cfg, pr.get(k))[0] is None:
                 warns.append(f"Pair thieu line: {k}={pr.get(k)}")
+        if pr.get("medial") is not None and \
+                find_line_any(cfg, pr.get("medial"))[0] is None:
+            warns.append(f"Pair thieu medial cu: {pr.get('medial')}")
+    for p in get_polygons(cfg):
+        if p.get("uturn_pairs") and not (p.get("rules") or {}).get(
+                "no_uturn", {}).get("enable", True):
+            warns.append(f"{p.get('id')}: co pair nhung no_uturn=false "
+                         "(pair thua, rule khong chay)")
     return warns

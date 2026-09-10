@@ -1,0 +1,23 @@
+# Vi du camera 01: bat wrong_way + no_uturn, tat duong cam.
+# Chay: python pipeline.py --config configs/cam_01.yaml --source rtsp://...
+# Ve geometry: python tools/draw_lines.py <nguon_cam01> --config configs/cam_01.yaml
+base: base.yaml
+camera_id: CAM_01
+source: assets/video.mp4
+wrong_way:
+  enable: true
+no_uturn:
+  enable: true
+no_entry_road:
+  enable: false
+polygons:
+- id: POLY_lane1
+  kind: directional
+  polygon: [[0, 0], [1558, 0], [1558, 720], [0, 720]]
+  lines:
+  - {id: L1, p1: [141, 182], p2: [760, 184], allowed_sign: 1}
+  - {id: L2, p1: [784, 185], p2: [1255, 194], allowed_sign: -1}
+  rules:
+    wrong_way: {enable: true}
+    no_uturn: {enable: false}   # chua co pair -> tat de khoi fail-fast
+uturn_pairs: []

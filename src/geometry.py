@@ -69,6 +69,8 @@ def _on_segment(px, py, ax, ay, bx, by):
 def point_in_polygon(pt, poly):
     """True neu diem trong polygon (tinh ca bien). Ray-casting truc X+."""
     x, y = pt
+    if not poly:
+        return False
     n = len(poly)
     if n < 3:
         return False

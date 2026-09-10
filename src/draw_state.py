@@ -12,6 +12,7 @@ from .line_config import add_directed, add_divider, add_pair, iter_all_lines
 CREATE_DELAY_S = 0.35  # doi double-click di qua roi moi tao line
 DBL_WINDOW_S = 0.5     # click don trong window nay truoc dblclk thi huy
 NEAR_PX = 12
+MIN_LINE_PX = 10.0     # 2 diem gan nhau hon -> double-click cham, bo qua
 
 
 def nearest_line(lines, x, y):
@@ -25,6 +26,27 @@ def nearest_line(lines, x, y):
         if d <= bd:
             best, bd = ln, d
     return best
+
+
+def resolve_enter_action(wizard, tool_mode):
+    """Enter re nhanh nao, khong can GUI. Tra ve:
+    'wizard_close' (flow gop phim 1) | 'standalone_close' (polygon le phim 4)
+    | 'none' (khong lam gi)."""
+    if wizard is not None and wizard.get("poly_id") is None:
+        return "wizard_close"
+    if tool_mode == "polygon":
+        return "standalone_close"
+    return "none"
+
+
+def mode_label(wizard, tool_mode, draw_mode):
+    """Nhan hien thi tren status, phan biet 2 flow polygon."""
+    if wizard is not None:
+        stage = "ve dinh" if wizard.get("poly_id") is None else "ve 2 lines"
+        return f"ZONE-FLOW ({stage})"
+    if tool_mode == "polygon":
+        return "POLYGON-LE"
+    return (draw_mode or "line").upper()
 
 
 class DrawState:
@@ -50,7 +72,7 @@ class DrawState:
             if ln is None:
                 return ("pair_miss", None)
             self.picks.append(ln["id"])
-            if len(self.picks) == 3:
+            if len(self.picks) == 2:
                 try:
                     pr = add_pair(self.cfg, *self.picks)
                     self.picks.clear()
@@ -70,12 +92,17 @@ class DrawState:
         return ("selected", self.selected["id"] if self.selected else None)
 
     def poll(self, now):
-        """Goi moi frame: du 2 clicks + qua delay -> tao line."""
+        """Goi moi frame: du 2 clicks + qua delay -> tao line.
+        2 diem gan nhau (< MIN_LINE_PX) la double-click cham -> bo qua,
+        khong tao line rac."""
         if self.mode == "pair" or len(self.clicks) < 2:
             return (None, None)
         (x1, y1, _), (x2, y2, t2) = self.clicks[0], self.clicks[1]
         if now - t2 < CREATE_DELAY_S:
             return (None, None)
+        if math.hypot(x2 - x1, y2 - y1) < MIN_LINE_PX:
+            self.clicks.clear()
+            return ("ignored_short", None)
         try:
             ln = add_directed(self.cfg, (x1, y1), (x2, y2)) \
                 if self.mode == "directed" \

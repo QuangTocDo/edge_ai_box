@@ -18,15 +18,13 @@ class TrackState:
         self.vel = (0.0, 0.0)  # van toc lam muot (px/frame)
         self.bbox = None
         self.last_frame = -1
-        # line_id -> (frame_idx, time_s, v_entry)
+        # line_id -> (frame_idx, time_s) cat dung chieu
         self.line_flags = {}
-        # line_id -> thoi diem cat medial/divider gan nhat (giay)
-        self.medial_cross_t = None
         # line_id -> [so frame nguoc lien tuc, quang duong px tich luy]
         self.reverse = {}
         # violation_type -> thoi diem het cooldown (giay)
         self.cooldowns = {}
-        # zone_id -> {inside, enter_t, via_entry} cho no_entry_road
+        # zone_id -> {inside, enter_t, fired} cho no_entry_road
         self.zones = {}
 
     def update(self, cls, conf, bc, bbox, frame_idx):

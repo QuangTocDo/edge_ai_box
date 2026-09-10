@@ -1,0 +1,31 @@
+# Base dung chung cho moi camera edge. File camera (cam_XX.yaml) ghi
+# `base: base.yaml` + phan override (camera_id, source, rules, geometry).
+# Quy tac merge: dict gop theo key (camera thang), list thay toan bo.
+camera_id: CAM_DEFAULT
+config_version: cfg_base
+timezone: Asia/Ho_Chi_Minh
+model:
+  weights: weights/best.pt
+  conf: 0.4
+  imgsz: 640
+  classes: [0, 1, 2, 3, 4, 5, 6, 7]
+  tracker: ocsort.yaml
+  device: null
+wrong_way:
+  enable: true
+  min_hits: 3
+  min_reverse_frames: 5
+  min_reverse_px: 60.0
+  cooldown_s: 10.0
+no_uturn:
+  enable: true
+  min_hits: 3
+  cooldown_s: 10.0
+no_entry_road:
+  enable: true
+  dwell_s: 2.0
+  min_hits: 3
+  cooldown_s: 10.0
+evidence:
+  dir: evidence
+  jpeg_quality: 90

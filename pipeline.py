@@ -13,11 +13,12 @@ from pathlib import Path
 import cv2
 import yaml
 
+from src.config_loader import (ConfigError, entries_for,
+                                 load_camera_config)
 from src.evidence import save_event
-from src.geometry import (allowed_vec, containing_polygons, in_active_hours,
-                          now_minutes, parse_window)
+from src.geometry import allowed_vec, now_minutes, point_in_polygon
 from src.line_config import iter_all_lines
-from src.rules import NoEntryRule, NoUTurnRule, WrongWayRule
+from src.rules import create as create_rule
 from src.tracking import Tracker
 
 ARROW_LEN = 60
@@ -38,7 +39,7 @@ def _cls_name(names, cls):
 def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
                  names=None, t_video=0.0):
     for p in polygons:
-        pts = [(int(x), int(y)) for x, y in p.get("polygon", [])]
+        pts = [(int(x), int(y)) for x, y in (p.get("polygon") or [])]
         if len(pts) >= 3:
             col = (0, 0, 255) if p.get("kind") == "banned" else (0, 255, 0)
             for a, b in zip(pts, pts[1:] + pts[:1]):
@@ -84,12 +85,10 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
             cv2.putText(img, ztxt, (bc[0] - 40, bc[1] + 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
     y = 30
+    ev_txt = "  ".join(f"{k} {v}" for k, v in sorted(counts.items()))
     for txt, col in [(f"FPS: {fps:.1f}", (0, 255, 0)),
                      (f"frame {frame_idx} tracks {len(tracks)}", (0, 255, 0)),
-                     (f"wrong_way {counts.get('wrong_way', 0)}  "
-                      f"no_uturn {counts.get('no_uturn', 0)}  "
-                      f"no_entry {counts.get('no_entry_road', 0)}  "
-                      f"skip {counts.get('skipped', 0)}",
+                     (ev_txt,
                       (0, 0, 255) if sum(v for k, v in counts.items()
                                          if k != "skipped") else (0, 255, 0))]:
         cv2.putText(img, txt, (10, y),
@@ -100,7 +99,9 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--source", default="assets/video.mp4")
+    ap.add_argument("--source", default=None,
+                    help="uu tien nhat; mac dinh lay tu file camera (source:), "
+                         "cuoi cung la assets/video.mp4")
     ap.add_argument("--config", default="camera_config.yaml")
     ap.add_argument("--no-show", action="store_true")
     ap.add_argument("--save", default="")
@@ -110,6 +111,9 @@ def main():
     ap.add_argument("--run-config", default="",
                     help="file yaml test (vd test_config.yaml); "
                          "CLI truyen tay van uu tien hon file")
+    ap.add_argument("--debug-rules", action="store_true",
+                    help="in explain() cua tracks dang active moi 30 frames "
+                         "(debug xe vao khong bao)")
     # nap run-config lam default truoc, CLI de sau se ghi de
     if "--run-config" in sys.argv:
         run = yaml.safe_load(
@@ -118,67 +122,51 @@ def main():
             "source", "config", "save", "max_frames", "no_show", "imgsz")})
     args = ap.parse_args()
 
-    cfg = yaml.safe_load(open(args.config))
+    try:
+        cfg, warns = load_camera_config(args.config)
+    except ConfigError as e:
+        raise SystemExit(f"[config] LOI: {e}")
+    for w in warns:
+        print(f"[config] canh bao: {w}")
     mc = cfg["model"]
     tracker = Tracker(weights=mc["weights"], conf=mc.get("conf", 0.4),
                       imgsz=args.imgsz or mc.get("imgsz", 640),
                       classes=mc.get("classes"),
                       tracker_cfg=mc.get("tracker", "ocsort.yaml"),
                       device=mc.get("device"))
-    wc, uc = cfg.get("wrong_way", {}), cfg.get("no_uturn", {})
-    ww = WrongWayRule(min_hits=wc.get("min_hits", 3),
-                      min_reverse_frames=wc.get("min_reverse_frames", 5),
-                      min_reverse_px=wc.get("min_reverse_px", 60.0),
-                      cooldown_s=wc.get("cooldown_s", 10.0))
-    ut = NoUTurnRule(time_window_s=tuple(uc.get("time_window_s", [2, 12])),
-                     require_velocity_inversion=uc.get(
-                         "require_velocity_inversion", True),
-                     require_medial=uc.get("require_medial", True),
-                     min_hits=uc.get("min_hits", 3),
-                     cooldown_s=uc.get("cooldown_s", 10.0))
-    nc = cfg.get("no_entry_road", {})
-    ner = NoEntryRule(dwell_s=nc.get("dwell_s", 2.0),
-                      min_hits=nc.get("min_hits", 3),
-                      cooldown_s=nc.get("cooldown_s", 10.0))
-    # polygons: dinh tuyen track theo Bottom-Center. Khong co polygon nao
-    # (= config cu lines phang) thi chay kieu cu cho tat ca tracks.
+    # 1 instance rule cho moi (polygon x rule duoc bat). Ten rule anh xa
+    # sang class qua registry (them loi moi khong can sua pipeline).
+    runners = []
+    for e in cfg["_plan"]:
+        runners.append((e, create_rule(e["rule"], e["params"])))
+    print(f"[config] {cfg.get('camera_id')}: {len(runners)} rule dang bat")
+    for e, _ in runners:
+        p = e["polygon"]
+        print(f"  - {e['rule']} @ {p['id'] if p else 'GLOBAL'} "
+              f"(params: {e['params']})")
     polys = cfg.get("polygons", [])
-    legacy_lines = cfg.get("lines", [])
-    pairs = cfg.get("uturn_pairs", [])
     tz = cfg.get("timezone", "Asia/Ho_Chi_Minh")
-    for p in polys:
-        wins = []
-        for w in p.get("active_hours", []):
-            try:
-                wins.append(parse_window(w))
-            except ValueError as e:
-                print(f"[cfg] {p.get('id')}: {e} -> khung gio nay bi bo qua")
-        p["_windows"] = wins
-    nested_ids = {ln["id"] for p in polys for ln in p.get("lines", [])}
-    line_poly = {}
-    for p in polys:
-        for ln in p.get("lines", []):
-            line_poly[ln["id"]] = p
-    all_lines = list(legacy_lines) + [ln for p in polys
-                                      for ln in p.get("lines", [])]
+    all_lines = list(iter_all_lines(cfg))
     ev = cfg.get("evidence", {})
+    ev_dir = str(Path(ev.get("dir", "evidence")) / cfg.get("camera_id", "CAM"))
 
-    src = args.source
+    src = args.source or cfg.get("source") or "assets/video.mp4"
     try:
         src = int(src)
     except ValueError:
         pass
     cap = cv2.VideoCapture(src)
     if not cap.isOpened():
-        raise SystemExit(f"Khong mo duoc source: {args.source}")
+        raise SystemExit(f"Khong mo duoc source (CLI/run-config/file camera): {src}")
     fps_src = cap.get(cv2.CAP_PROP_FPS) or 30.0
     writer = None
 
-    counts = {"wrong_way": 0, "no_uturn": 0, "no_entry_road": 0,
-              "skipped": 0}
+    counts = {"skipped": 0}
     frame_idx, prev_t, start_t = 0, time.perf_counter(), time.perf_counter()
     fps = 0.0
     wall_min = now_minutes(tz)
+    plan_entries = [e for e, _ in runners]
+    rule_of = {id(e): r for e, r in runners}
     while True:
         ok, frame = cap.read()
         if not ok or frame is None:
@@ -190,49 +178,38 @@ def main():
         tracks = tracker.update(frame, frame_idx)
         for st in tracks.values():
             bc = st.pts[-1]
-            assigned = containing_polygons(bc, polys) if polys else []
-            if polys and not assigned:
+            wanted = entries_for(bc, plan_entries, point_in_polygon)
+            if not wanted:
                 counts["skipped"] += 1
                 continue  # ngoai moi polygon: hien overlay, khong chay rule
-            ww_lines = list(legacy_lines)
-            ut_pairs, ner_polys = [], []
-            for p in assigned:
-                h = p.get("handler", [])
-                if "wrong_way" in h:
-                    ww_lines += [ln for ln in p.get("lines", [])
-                                 if ln not in ww_lines]
-                if "no_uturn" in h:
-                    for pr in pairs:
-                        f1, f2 = pr["first"], pr["second"]
-                        in_here = (line_poly.get(f1, p) is p
-                                   and line_poly.get(f2, p) is p)
-                        legacy = f1 not in nested_ids and f2 not in nested_ids
-                        if (in_here or legacy) and pr not in ut_pairs:
-                            ut_pairs.append(pr)
-                if p.get("kind") == "banned" and "no_entry_road" in h:
-                    ner_polys.append(p)
-            e = ww.update(st, ww_lines, frame_idx, t)
-            if e is None:
-                for pr in ut_pairs:
-                    e = ut.update(st, all_lines, [pr], frame_idx, t)
-                    if e:
-                        break
-            if e is None:
-                for poly in ner_polys:
-                    e = ner.update(st, poly, wall_min, frame_idx, t)
-                    if e:
-                        break
+            e = None
+            for entry in wanted:
+                rule = rule_of[id(entry)]
+                e = rule.run(entry, st, frame_idx, t, wall_min)
+                if e:
+                    break
             if e:
-                counts[e["type"]] += 1
+                counts[e["type"]] = counts.get(e["type"], 0) + 1
                 jp, js = save_event(
                     frame, e, all_lines, tracker.names,
-                    out_dir=ev.get("dir", "evidence"),
+                    out_dir=str(Path(ev.get("dir", "evidence"))
+                                / cfg.get("camera_id", "CAM")),
                     camera_id=cfg.get("camera_id", "CAM"),
                     config_version=cfg.get("config_version", "cfg_v1"),
                     model_version=Path(mc["weights"]).stem,
                     jpeg_quality=ev.get("jpeg_quality", 90))
                 print(f"[{e['type']}] track={e['track_id']} "
                       f"line={e['line_id']} frame={frame_idx} -> {jp}")
+        if args.debug_rules and frame_idx % 30 == 1:
+            for st in tracks.values():
+                if not (st.reverse or st.line_flags or st.zones):
+                    continue  # chi log track dang co trang thai
+                bc = st.pts[-1]
+                for entry in entries_for(bc, plan_entries, point_in_polygon):
+                    rule = rule_of[id(entry)]
+                    print(f"[dbg f{frame_idx}] " + rule.explain(
+                        st, t=t, lines=entry["lines"], pairs=entry["pairs"],
+                        polygon=entry["polygon"], wall_min=wall_min))
         now = time.perf_counter()
         fps = 1.0 / (now - prev_t) if now > prev_t else 0.0
         prev_t = now
