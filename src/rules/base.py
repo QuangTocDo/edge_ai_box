@@ -23,7 +23,8 @@ class BaseRule:
     def update(self, track, *args):
         raise NotImplementedError
 
-    def run(self, entry, track, frame_idx, t, wall_min=None):
+    def run(self, entry, track, frame_idx, t, wall_min=None,
+            frame=None, signals=None):
         """Chay rule tren 1 plan entry (pipeline goi ham nay thay vi
         re nhanh if/elif theo ten rule)."""
         raise NotImplementedError

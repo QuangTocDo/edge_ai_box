@@ -248,13 +248,15 @@ def add_polygon(cfg, vertices, kind="banned", pid=None, handler=None, **fields):
     pid = pid or next_poly_id(cfg)
     if find_polygon(cfg, pid):
         raise ValueError(f"Trung id polygon: {pid}")
-    if kind not in ("directional", "banned"):
+    if kind not in ("directional", "banned", "intersection"):
         raise ValueError(f"kind la: {kind}")
+    if handler is None:
+        handler = ["no_entry_road"] if kind == "banned" else \
+            ([] if kind == "intersection" else ["wrong_way", "no_uturn"])
     poly = {"id": pid, "kind": kind,
             "polygon": [[int(x), int(y)] for x, y in vertices],
             "lines": [],
-            "handler": handler or (["no_entry_road"] if kind == "banned"
-                                   else ["wrong_way", "no_uturn"])}
+            "handler": handler}
     for h in poly["handler"]:
         if h not in KNOWN_HANDLERS:
             raise ValueError(f"handler la: {h}")
@@ -371,3 +373,30 @@ def validate_polygons(cfg):
             warns.append(f"{p.get('id')}: co pair nhung no_uturn=false "
                          "(pair thua, rule khong chay)")
     return warns
+
+
+def find_signal(cfg, sid):
+    """Tim signal theo id trong cfg['signals']."""
+    for s in cfg.get("signals", []):
+        if s.get("id") == sid:
+            return s
+    return None
+
+
+def delete_signal(cfg, sid):
+    """Xoa signal khoi cfg['signals'], go signal_id khoi tat ca cac line dang tro toi."""
+    sigs = cfg.get("signals", [])
+    target = None
+    for s in sigs:
+        if s.get("id") == sid:
+            target = s
+            break
+    if target is None:
+        raise ValueError(f"Khong tim thay signal: {sid}")
+    sigs.remove(target)
+    unlinked = []
+    for ln in iter_all_lines(cfg):
+        if ln.get("signal_id") == sid:
+            ln.pop("signal_id", None)
+            unlinked.append(ln["id"])
+    return target, unlinked

@@ -233,6 +233,56 @@ def test_nouturn_enabled_no_pairs_warns():
     print("no-uturn-no-pairs warn OK")
 
 
+def test_speeding_needs_calibration():
+    def bad(**kw):
+        c = {"camera_id": "T", "model": {}, "lines": [], "uturn_pairs": [],
+             "wrong_way": {"enable": False}, "no_uturn": {"enable": False},
+             "no_entry_road": {"enable": False}}
+        c.update(kw)
+        return c
+    sq = [[0, 0], [200, 0], [200, 200], [0, 200]]
+    # bat speeding nhung thieu homography -> loi
+    c = bad(polygons=[{"id": "S", "kind": "directional", "polygon": sq,
+                       "rules": {"speeding": {"enable": True, "limit_kmh": 50}}}])
+    try:
+        load_camera_config(write_tmp(c))
+        raise AssertionError("thieu homography phai loi")
+    except ConfigError:
+        pass
+    # thieu road_dir -> loi
+    c = bad(polygons=[{"id": "S", "kind": "directional", "polygon": sq,
+                       "homography": {"src": [[0, 0], [100, 0], [100, 100],
+                                              [0, 100]],
+                                      "dst": [[0, 0], [10, 0], [10, 10],
+                                              [0, 10]]},
+                       "rules": {"speeding": {"enable": True, "limit_kmh": 50}}}])
+    try:
+        load_camera_config(write_tmp(c))
+        raise AssertionError("thieu road_dir phai loi")
+    except ConfigError:
+        pass
+    # diem thang hang -> loi RANSAC
+    c["polygons"][0]["road_dir"] = [1, 0]
+    c["polygons"][0]["homography"] = {
+        "src": [[0, 0], [1, 1], [2, 2], [3, 3]],
+        "dst": [[0, 0], [1, 0], [2, 0], [3, 0]]}
+    try:
+        load_camera_config(write_tmp(c))
+        raise AssertionError("H suy bien phai loi")
+    except ConfigError:
+        pass
+    # hop le -> entry trong plan, H build san
+    c["polygons"][0]["homography"] = {
+        "src": [[0, 0], [100, 0], [100, 100], [0, 100]],
+        "dst": [[0, 0], [10, 0], [10, 10], [0, 10]]}
+    cfg, warns = load_camera_config(write_tmp(c))
+    assert warns == [], warns
+    entries = [e for e in cfg["_plan"] if e["rule"] == "speeding"]
+    assert len(entries) == 1
+    assert entries[0]["polygon"]["_H_error"] < 1e-6
+    print("speeding calibration validation OK")
+
+
 if __name__ == "__main__":
     test_merge()
     test_base_override_file()
@@ -244,4 +294,5 @@ if __name__ == "__main__":
     test_routing_skip()
     test_standalone_ww_flow()
     test_nouturn_enabled_no_pairs_warns()
+    test_speeding_needs_calibration()
     print("ALL CONFIG-LOADER TESTS PASSED")

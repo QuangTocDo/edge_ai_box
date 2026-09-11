@@ -1,23 +1,95 @@
-# Vi du camera 01: bat wrong_way + no_uturn, tat duong cam.
-# Chay: python pipeline.py --config configs/cam_01.yaml --source rtsp://...
-# Ve geometry: python tools/draw_lines.py <nguon_cam01> --config configs/cam_01.yaml
-base: base.yaml
-camera_id: CAM_01
-source: assets/video.mp4
-wrong_way:
-  enable: true
-no_uturn:
-  enable: true
-no_entry_road:
-  enable: false
+camera_id: CAM_TEST_01
+config_version: cfg_v2
+timezone: Asia/Ho_Chi_Minh
+model:
+  weights: weights/best.pt
+  conf: 0.4
+  imgsz: 640
+  classes:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  tracker: ocsort.yaml
+  device: null
 polygons:
-- id: POLY_lane1
+- id: POLY_1
   kind: directional
-  polygon: [[0, 0], [1558, 0], [1558, 720], [0, 720]]
+  polygon:
+  - - 2
+    - 156
+  - - 546
+    - 110
+  - - 639
+    - 139
+  - - 0
+    - 193
+  - - 3
+    - 153
   lines:
-  - {id: L1, p1: [141, 182], p2: [760, 184], allowed_sign: 1}
-  - {id: L2, p1: [784, 185], p2: [1255, 194], allowed_sign: -1}
+  - id: L1
+    p1:
+    - 10
+    - 171
+    p2:
+    - 314
+    - 142
+    allowed_sign: 1
+  - id: L3
+    p1:
+    - 366
+    - 140
+    p2:
+    - 569
+    - 121
+    allowed_sign: -1
+  handler:
+  - wrong_way
+  - no_uturn
   rules:
-    wrong_way: {enable: true}
-    no_uturn: {enable: false}   # chua co pair -> tat de khoi fail-fast
+    wrong_way:
+      enable: false
+    no_uturn:
+      enable: true
+    no_entry_road:
+      enable: false
+    red_light_running:
+      enable: false
+    stop_line_violation:
+      enable: false
+    speeding:
+      enable: false
+  uturn_pairs:
+  - first: L1
+    second: L3
+lines:
+- id: L2
+  p1:
+  - 782
+  - 169
+  p2:
+  - 1261
+  - 192
+  allowed_sign: -1
 uturn_pairs: []
+wrong_way:
+  min_hits: 3
+  min_reverse_frames: 5
+  min_reverse_px: 60.0
+  cooldown_s: 10.0
+no_uturn:
+  min_hits: 3
+  cooldown_s: 10.0
+no_entry_road:
+  dwell_s: 2.0
+  min_hits: 3
+  cooldown_s: 10.0
+evidence:
+  dir: evidence
+  jpeg_quality: 90
+  retention_days: 7
+signals: []

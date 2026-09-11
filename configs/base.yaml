@@ -8,6 +8,9 @@ model:
   weights: weights/best.pt
   conf: 0.4
   imgsz: 640
+  # Data custom data_v1 (best.pt): 0=motorbike_day, 1=car_day, 2=bus_day,
+  # 3=truck_day, 4=motorbike_night, 5=car_night, 6=bus_night, 7=truck_night
+  # Groups: motorbike=[0,4], car=[1,5], bus=[2,6], truck=[3,7]. Chua detect nguoi.
   classes: [0, 1, 2, 3, 4, 5, 6, 7]
   tracker: ocsort.yaml
   device: null
@@ -29,3 +32,4 @@ no_entry_road:
 evidence:
   dir: evidence
   jpeg_quality: 90
+  retention_days: 7  # xoa thu muc date=* qua han (khong xoa hom nay)

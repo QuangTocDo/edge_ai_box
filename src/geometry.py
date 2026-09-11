@@ -96,6 +96,41 @@ def containing_polygons(pt, polygons):
             if point_in_polygon(pt, p.get("polygon", []))]
 
 
+def distance_point_to_segment(p, a, b):
+    """Khoang cach tu diem p den doan thang a-b."""
+    px, py = p
+    ax, ay = a
+    bx, by = b
+    dx, dy = bx - ax, by - ay
+    l2 = dx * dx + dy * dy
+    if l2 < 1e-9:
+        return math.hypot(px - ax, py - ay)
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / l2))
+    proj_x = ax + t * dx
+    proj_y = ay + t * dy
+    return math.hypot(px - proj_x, py - proj_y)
+
+
+def line_near_or_in_polygon(p1, p2, poly, max_dist=25.0):
+    """Kiem tra xem line (p1, p2) co nam trong, cat, hoac nam sat polygon (<= max_dist)."""
+    if not poly or len(poly) < 3:
+        return False
+    pm = ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0)
+    if point_in_polygon(pm, poly) or point_in_polygon(p1, poly) or point_in_polygon(p2, poly):
+        return True
+    n = len(poly)
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        if crossing_sign(p1, p2, a, b) != 0:
+            return True
+    for pt in (pm, p1, p2):
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            if distance_point_to_segment(pt, a, b) <= max_dist:
+                return True
+    return False
+
+
 def polygon_valid(poly):
     """>=3 dinh + dien tich > 0 (loai tu cat don gian)."""
     if len(poly) < 3:

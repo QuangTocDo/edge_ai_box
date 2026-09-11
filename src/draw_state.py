@@ -46,6 +46,12 @@ def mode_label(wizard, tool_mode, draw_mode):
         return f"ZONE-FLOW ({stage})"
     if tool_mode == "polygon":
         return "POLYGON-LE"
+    if tool_mode == "roi":
+        return "ROI-DEN"
+    if tool_mode == "calib":
+        return "HIEU-CHUAN-H"
+    if tool_mode == "calib":
+        return "HIEU-CHUAN-H"
     return (draw_mode or "line").upper()
 
 

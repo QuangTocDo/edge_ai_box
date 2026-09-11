@@ -1,0 +1,33 @@
+# Docker build context: giu image gon, khong copy rac/nang vao edge.
+.venv/
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.git/
+.gitignore
+
+# Nang: tu tai/chia se rieng, khong bake (ngoai tru weights/best.pt cho edge)
+weights/
+*.pt
+*.onnx
+*.engine
+!weights/best.pt
+runs/
+data_*/images/
+data_*/labels/
+datasets/
+assets/
+evidence/
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Dev-only: draw tool + dataset script chay tren host
+tools/
+tests/
+view.py
+show_classes.py
+main.py

@@ -40,7 +40,7 @@ class TrackState:
 
 
 class Tracker:
-    def __init__(self, weights="weights/yolo26n.pt", conf=0.4, imgsz=640,
+    def __init__(self, weights="weights/best.pt", conf=0.4, imgsz=640,
                  classes=None, tracker_cfg="ocsort.yaml", device=None,
                  max_age_frames=30):
         self.model = YOLO(weights)

@@ -60,7 +60,8 @@ class NoEntryRule(BaseRule):
                               "banned_classes": polygon.get("banned_classes", [])}}
         return None
 
-    def run(self, entry, track, frame_idx, t, wall_min=None):
+    def run(self, entry, track, frame_idx, t, wall_min=None,
+            frame=None, signals=None):
         """Chay rule tren 1 plan entry (pipeline goi ham nay)."""
         return self.update(track, entry["polygon"], wall_min,
                            frame_idx, t)

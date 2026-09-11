@@ -5,7 +5,7 @@ Schema:
   list thay toan bo, camera thang).
 - Global `wrong_way: / no_uturn: / no_entry_road:` vua la params mac dinh
   vua co `enable:` (mac dinh true).
-- Moi polygon co the `rules: {ten_rule: {enable:, ...override}}`.
+- Moi polygon co the `rules: {ten_rule: {enable:, ...override}}`._
 - `lines:` phang + `uturn_pairs:` global tu boc vao polygon implicit
   `__GLOBAL__` (khop moi track) de config cu chay y nhu cu.
 - Ngoai moi polygon explicit = hop le (skip), khong chay rule.
@@ -60,6 +60,48 @@ def normalize(cfg):
     cfg.setdefault("uturn_pairs", [])
     for name in RULES:
         cfg.setdefault(name, {})
+    # Chuan hoa alias rule global: red_light -> red_light_running, stop_line -> stop_line_violation
+    if "stop_line" in cfg:
+        cfg.setdefault("stop_line_violation", {})
+        cfg["stop_line_violation"] = {**cfg.pop("stop_line"), **cfg["stop_line_violation"]}
+    if "red_light" in cfg:
+        cfg.setdefault("red_light_running", {})
+        cfg["red_light_running"] = {**cfg.pop("red_light"), **cfg["red_light_running"]}
+    for p in cfg["polygons"]:
+        # dich legacy `handler: [wrong_way, ...]` -> rules enable map
+        if "handler" in p and "rules" not in p:
+            p["rules"] = {r: {"enable": True} for r in p.pop("handler")}
+        p.setdefault("rules", {})
+        # Chuan hoa alias rule trong polygon
+        rules = p["rules"]
+        if "stop_line" in rules and "stop_line_violation" not in rules:
+            rules["stop_line_violation"] = rules.pop("stop_line")
+        if "red_light" in rules and "red_light_running" not in rules:
+            rules["red_light_running"] = rules.pop("red_light")
+        p.setdefault("lines", [])
+
+    # Tu dong gan lines top-level co signal_id vao polygon co rule red/stop neu line o gan hoac chi co 1 polygon
+    from .geometry import line_near_or_in_polygon
+    flat_lines = cfg.get("lines") or []
+    remaining_flat = []
+    for ln in flat_lines:
+        attached_poly = None
+        if ln.get("signal_id"):
+            red_polys = [p for p in cfg["polygons"] if p.get("id") != IMPLICIT_ID and (
+                (p.get("rules") or {}).get("red_light_running") or
+                (p.get("rules") or {}).get("stop_line_violation"))]
+            for p in red_polys:
+                if line_near_or_in_polygon(ln["p1"], ln["p2"], p.get("polygon") or [], max_dist=80.0):
+                    attached_poly = p
+                    break
+            if attached_poly is None and len(red_polys) == 1:
+                attached_poly = red_polys[0]
+        if attached_poly is not None:
+            attached_poly.setdefault("lines", []).append(ln)
+        else:
+            remaining_flat.append(ln)
+    cfg["lines"] = remaining_flat
+
     flat_lines = cfg.get("lines") or []
     flat_pairs = cfg.get("uturn_pairs") or []
     if flat_lines or flat_pairs:
@@ -71,17 +113,27 @@ def normalize(cfg):
         # nhung thuoc ve implicit poly (khop moi track).
         glob["_pairs"] = flat_pairs
         cfg["uturn_pairs"] = []
+
     for p in cfg["polygons"]:
-        # dich legacy `handler: [wrong_way, ...]` -> rules enable map
-        if "handler" in p and "rules" not in p:
-            p["rules"] = {r: {"enable": True} for r in p.pop("handler")}
-        p.setdefault("rules", {})
-        p.setdefault("lines", [])
+        rules = p.get("rules") or {}
+        # Tu dong gan signal_id neu chi co 1 signal va line chua co signal_id
+        r = {k: (v or {}).get("enable", True) for k, v in rules.items()}
+        if r.get("red_light_running") or r.get("stop_line_violation"):
+            sigs = cfg.get("signals", [])
+            if len(sigs) == 1:
+                default_sid = sigs[0]["id"]
+                for ln in p["lines"]:
+                    if ln.get("role") != "divider" and not ln.get("signal_id"):
+                        ln["signal_id"] = default_sid
         if p.get("kind") == "banned":
             p.setdefault("entry_lines", [])
             p.setdefault("banned_classes", [])
             p.setdefault("active_hours", [])
             p.setdefault("dwell_s", 2.0)
+        if p.get("homography") is not None and p["id"] != IMPLICIT_ID:
+            # Hieu chuan toc do: co homography = opt-in. Build + validate
+            # ngay luc load (fail-fast), luu san ma tran de runtime dung.
+            p["_H"], p["_H_error"], p["_road_dir"] = _build_polygon_H(cfg, p)
         wins = []
         for w in p.get("active_hours", []):
             try:
@@ -98,6 +150,34 @@ def _poly_lines(pid, cfg):
     return None
 
 
+def _build_polygon_H(cfg, poly):
+    """Build + validate H cho speed polygon. Loi -> ConfigError ro rang."""
+    from .homography import build_H
+    pid = poly.get("id")
+    h = poly.get("homography") or {}
+    src, dst = h.get("src"), h.get("dst")
+    if not src or not dst:
+        raise ConfigError(
+            f"{pid}: speeding can 'homography: {{src: [...], dst: [...]}}' "
+            "toi thieu 4 cap diem (xem tool hieu chuan phim c)")
+    if not poly.get("road_dir"):
+        raise ConfigError(
+            f"{pid}: speeding can 'road_dir: [dx, dy]' huong duong "
+            "(xem tool hieu chuan phim c)")
+    try:
+        H, inl, err = build_H(src, dst)
+    except ValueError as e:
+        raise ConfigError(f"{pid}: homography loi: {e}")
+    max_err = float(poly.get("homography_max_err_m",
+                             cfg.get("speeding", {}).get(
+                                 "homography_max_err_m", 0.3)))
+    if err > max_err:
+        raise ConfigError(
+            f"{pid}: homography reproj error {err:.2f}m > {max_err:.2f}m, "
+            "chup lai diem calibration")
+    return H, err, list(poly["road_dir"])
+
+
 def validate(cfg):
     """Fail-fast loi cau truc. Tra ve warnings (rule chua implement)."""
     from .rules import RULE_REGISTRY
@@ -110,6 +190,13 @@ def validate(cfg):
     pids = [p.get("id") for p in cfg["polygons"]]
     if len(pids) != len(set(pids)):
         raise ConfigError("Trung id polygon")
+    sids = [s.get("id") for s in cfg.get("signals", [])]
+    if len(sids) != len(set(sids)):
+        raise ConfigError("Trung id signal")
+    for s in cfg.get("signals", []):
+        roi = s.get("roi", [])
+        if len(roi) != 4 or not all(isinstance(v, (int, float)) for v in roi):
+            raise ConfigError(f"Signal {s.get('id')}: roi phai co 4 so")
     lids = []
     for p in cfg["polygons"]:
         lids += [ln.get("id") for ln in p.get("lines", [])]
@@ -149,6 +236,28 @@ def validate(cfg):
                 raise ConfigError(f"{pid}: polygon khong hop le")
         if r.get("wrong_way") and not ndir and p["id"] != IMPLICIT_ID:
             raise ConfigError(f"{pid}: wrong_way bat nhung thieu directed line")
+        if r.get("speeding") and p.get("_H") is None \
+                and p["id"] != IMPLICIT_ID:
+            raise ConfigError(
+                f"{pid}: speeding bat nhung chua hieu chuan homography "
+                "(them 'homography: {{src, dst}}' + 'road_dir', "
+                "xem tool hieu chuan phim c)")
+        if r.get("red_light_running") or r.get("stop_line_violation") or r.get("stop_line"):
+            sig_lines = [ln for ln in ndir if ln.get("signal_id")]
+            if not sig_lines:
+                raise ConfigError(
+                    f"{pid}: red/stop bat nhung khong co stop-line nao "
+                    "co signal_id")
+            cfg_sigs = {s.get("id") for s in cfg.get("signals", [])}
+            if not cfg_sigs:
+                raise ConfigError(
+                    f"{pid}: red/stop bat nhung thieu muc 'signals' "
+                    "trong config")
+            for ln in sig_lines:
+                if ln.get("signal_id") not in cfg_sigs:
+                    raise ConfigError(
+                        f"{pid}: line {ln['id']} tro toi signal la "
+                        f"'{ln.get('signal_id')}'")
     for pr in cfg.get("uturn_pairs", []):
         _check_pair(pr, None, all_ids)
     for p in cfg["polygons"]:
@@ -199,9 +308,8 @@ def resolve_plan(cfg):
                                        if ln.get("role") != "divider"],
                              "pairs": []})
             elif rule == "no_uturn":
-                pairs = list(p.get("uturn_pairs", []))
-                if p["id"] == IMPLICIT_ID:  # pairs phang cu nam o _pairs
-                    pairs += list(p.get("_pairs", []))
+                pairs = list(p.get("uturn_pairs", []))\
+                    + list(p.get("_pairs", []))
                 plan.append({"polygon": p, "rule": rule,
                              "params": effective_params(cfg, p, rule),
                              "lines": lines, "pairs": pairs})
@@ -209,14 +317,59 @@ def resolve_plan(cfg):
                 if p.get("kind") != "banned" or p["id"] == IMPLICIT_ID:
                     continue
                 plan.append({"polygon": p, "rule": rule,
+                              "params": effective_params(cfg, p, rule),
+                              "lines": [], "pairs": []})
+            elif rule == "speeding":
+                if p["id"] == IMPLICIT_ID or p.get("_H") is None:
+                    continue  # chua hieu chuan H -> khong chay
+                plan.append({"polygon": p, "rule": rule,
                              "params": effective_params(cfg, p, rule),
                              "lines": [], "pairs": []})
+            elif rule in ("red_light_running", "stop_line_violation", "stop_line"):
+                sig_lines = [ln for ln in lines
+                             if ln.get("signal_id") and ln.get("role") != "divider"]
+                if p["id"] == IMPLICIT_ID:
+                    if sig_lines:
+                        plan.append({"polygon": p, "rule": rule,
+                                     "params": effective_params(cfg, p, rule),
+                                     "lines": sig_lines,
+                                     "pairs": [],
+                                     "clearance": []})
+                    continue
+                plan.append({"polygon": p, "rule": rule,
+                             "params": effective_params(cfg, p, rule),
+                             "lines": [ln for ln in lines
+                                       if ln.get("role") != "divider"],
+                             "pairs": [],
+                             "clearance": _resolve_clearance(
+                                 cfg, p, effective_params(cfg, p, rule))})
     cfg["_plan"] = plan
 
 
-def entries_for(bc, plan, containing_fn):
+def _resolve_clearance(cfg, poly, params):
+    """Giai quyet intersection_clearance_zone (str hoac list id)
+    thanh list polygon objects. Khong co -> []."""
+    ref = params.get("intersection_clearance_zone")
+    if not ref:
+        return []
+    ids = [ref] if isinstance(ref, str) else list(ref)
+    by_id = {str(p.get("id")): p for p in cfg.get("polygons", [])}
+    out = []
+    for i in ids:
+        s = str(i).strip()
+        if s in by_id:
+            out.append(by_id[s])
+        elif f"POLY_{s}" in by_id:
+            out.append(by_id[f"POLY_{s}"])
+        else:
+            raise ConfigError(
+                f"{poly.get('id')}: clearance zone la '{i}'. Hop le: {sorted(by_id.keys())}")
+    return out
+
+
+def entries_for(bc, plan, containing_fn, track=None):
     """Cac plan entry ap dung cho track: polygon None/implicit = moi track,
-    polygon explicit phai chua Bottom-Center. Tra ve [] = skip (hop le)."""
+    polygon explicit phai chua Bottom-Center hoac clearance. Tra ve [] = skip (hop le)."""
     out = []
     for e in plan:
         p = e["polygon"]
@@ -225,4 +378,19 @@ def entries_for(bc, plan, containing_fn):
             continue
         if containing_fn(bc, p.get("polygon", [])):
             out.append(e)
+            continue
+        # Ho tro clearance zone cho red_light_running (neu co)
+        if any(containing_fn(bc, clr.get("polygon", []))
+               for clr in e.get("clearance", [])):
+            out.append(e)
+            continue
+        # Neu track dang co candidate active tren line cua entry nay, van tiep tuc theo doi
+        if track is not None:
+            rs = getattr(track, "red", None)
+            if rs:
+                elids = {ln.get("id") for ln in e.get("lines", [])}
+                if any(lid in elids for lid, c in rs.get("cands", {}).items() if not c.get("fired")) or \
+                   any(lid in elids for lid, c in rs.get("stops", {}).items() if not c.get("fired")):
+                    out.append(e)
+                    continue
     return out

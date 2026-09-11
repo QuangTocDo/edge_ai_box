@@ -48,7 +48,8 @@ class NoUTurnRule(BaseRule):
                     "extra": {"dt_s": round(dt, 2)}}
         return None
 
-    def run(self, entry, track, frame_idx, t, wall_min=None):
+    def run(self, entry, track, frame_idx, t, wall_min=None,
+            frame=None, signals=None):
         """Chay rule tren 1 plan entry (pipeline goi ham nay)."""
         for pr in entry["pairs"]:
             e = self.update(track, entry["lines"], [pr], frame_idx, t)

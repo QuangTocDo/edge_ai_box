@@ -2,14 +2,17 @@ camera_id: CAM_TEST_01
 config_version: cfg_v2
 timezone: Asia/Ho_Chi_Minh
 model:
-  weights: weights/yolo26n.pt
+  weights: weights/best.pt
   conf: 0.4
-  imgsz: 1920
+  imgsz: 640
   classes:
+  - 0
   - 1
   - 2
   - 3
+  - 4
   - 5
+  - 6
   - 7
   tracker: ocsort.yaml
   device: null
@@ -17,71 +20,61 @@ polygons:
 - id: POLY_1
   kind: directional
   polygon:
-  - - 553
-    - 296
-  - - 555
-    - 412
-  - - 535
-    - 595
-  - - 514
-    - 714
-  - - 735
-    - 712
-  - - 730
-    - 596
-  - - 716
-    - 489
-  - - 690
-    - 372
-  - - 660
-    - 278
-  - - 567
-    - 148
-  - - 499
-    - 163
-  - - 540
-    - 240
-  - - 552
-    - 294
+  - - 2
+    - 156
+  - - 546
+    - 110
+  - - 639
+    - 139
+  - - 0
+    - 193
+  - - 3
+    - 153
   lines:
   - id: L1
     p1:
-    - 543
-    - 253
+    - 10
+    - 171
     p2:
-    - 622
-    - 226
+    - 314
+    - 142
     allowed_sign: 1
-  - id: L2
+  - id: L3
     p1:
-    - 547
-    - 494
+    - 366
+    - 140
     p2:
-    - 713
-    - 482
-    allowed_sign: 1
+    - 569
+    - 121
+    allowed_sign: -1
   handler:
   - wrong_way
   - no_uturn
   rules:
     wrong_way:
-      enable: true
+      enable: false
     no_uturn:
       enable: true
+    no_entry_road:
+      enable: false
+    red_light_running:
+      enable: false
+    stop_line_violation:
+      enable: false
+    speeding:
+      enable: false
   uturn_pairs:
   - first: L1
-    second: L2
-  - first: L2
-    second: L1
+    second: L3
 lines:
-- id: L3
+- id: L2
   p1:
-  - 176
-  - 403
+  - 782
+  - 169
   p2:
-  - 494
-  - 415
-  allowed_sign: 1
+  - 1261
+  - 192
+  allowed_sign: -1
 uturn_pairs: []
 wrong_way:
   min_hits: 3
@@ -98,3 +91,5 @@ no_entry_road:
 evidence:
   dir: evidence
   jpeg_quality: 90
+  retention_days: 7
+signals: []

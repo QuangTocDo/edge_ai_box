@@ -6,22 +6,40 @@ Khong can sua pipeline.py hay config_loader.py.
 from .base import BaseRule, cooldown_ok
 from .no_entry_road import NoEntryRule
 from .no_uturn import NoUTurnRule
+from .red_light_running import RedLightRunningRule
+from .speeding import SpeedingRule
+from .stop_line import StopLineRule
 from .wrong_way import WrongWayRule
 
 RULE_REGISTRY = {
     WrongWayRule.TYPE: WrongWayRule,
     NoUTurnRule.TYPE: NoUTurnRule,
     NoEntryRule.TYPE: NoEntryRule,
+    RedLightRunningRule.TYPE: RedLightRunningRule,
+    StopLineRule.TYPE: StopLineRule,
+    SpeedingRule.TYPE: SpeedingRule,
+    "stop_line": StopLineRule,
+    "red_light": RedLightRunningRule,
 }
 
+# Danh sach cac loai rule chuan hoa (dung cho config_loader.RULES)
+CANONICAL_TYPES = (
+    WrongWayRule.TYPE,
+    NoUTurnRule.TYPE,
+    NoEntryRule.TYPE,
+    RedLightRunningRule.TYPE,
+    StopLineRule.TYPE,
+    SpeedingRule.TYPE,
+)
+
 # Ten da biet nhung chua co class Rule -> loader warn, khong crash.
-PLANNED_TYPES = {"no_parking", "no_gathering", "red_light", "stop_line",
-                 "speeding"}
+PLANNED_TYPES = {"no_parking", "no_gathering"}
 
 
 def known_types():
     """Ten cac rule da implement (dung thay config_loader.RULES)."""
-    return tuple(RULE_REGISTRY)
+    return CANONICAL_TYPES
+
 
 
 def create(name, params):
@@ -42,5 +60,6 @@ def create(name, params):
 
 
 __all__ = ["BaseRule", "WrongWayRule", "NoUTurnRule", "NoEntryRule",
+           "RedLightRunningRule", "StopLineRule", "SpeedingRule",
            "RULE_REGISTRY", "PLANNED_TYPES", "known_types", "create",
            "cooldown_ok"]

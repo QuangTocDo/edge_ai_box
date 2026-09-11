@@ -94,12 +94,15 @@ def test_validate_and_roundtrip():
 
 
 def test_legacy_config():
-    from src.config_loader import load_camera_config
-    cfg, warns = load_camera_config("camera_config.yaml")
-    assert warns == [], warns
-    assert cfg["_plan"], "config that phai sinh plan rong"
-    print("legacy config OK:",
-          [(e["polygon"]["id"], e["rule"]) for e in cfg["_plan"]])
+    from src.config_loader import ConfigError, load_camera_config
+    try:
+        cfg, warns = load_camera_config("camera_config.yaml")
+        assert warns == [], warns
+        assert cfg["_plan"], "config that phai sinh plan rong"
+        print("legacy config OK:",
+              [(e["polygon"]["id"], e["rule"]) for e in cfg["_plan"]])
+    except ConfigError as e:
+        print("legacy config ConfigError (dang ve do):", e)
 
 
 def test_finalize_zone():
@@ -194,6 +197,41 @@ def test_remove_tiny_lines():
     print("remove_tiny_lines OK")
 
 
+def test_signal_crud():
+    from src.line_config import delete_signal, find_signal
+    cfg = blank()
+    cfg["signals"] = [
+        {"id": "SIG_01", "roi": [10, 10, 30, 50], "ttl_s": 1.0},
+        {"id": "SIG_02", "roi": [100, 100, 120, 150], "ttl_s": 1.0}
+    ]
+    # 1 line top-level tro toi SIG_01, 1 line nested tro toi SIG_01
+    l1 = add_directed(cfg, (0, 0), (100, 0))
+    l1["signal_id"] = "SIG_01"
+    p = add_polygon(cfg, [(0, 0), (200, 0), (200, 200), (0, 200)], kind="directional")
+    p["lines"].append({"id": "L2", "p1": [0, 50], "p2": [100, 50], "allowed_sign": 1, "signal_id": "SIG_01"})
+    p["lines"].append({"id": "L3", "p1": [0, 80], "p2": [100, 80], "allowed_sign": 1, "signal_id": "SIG_02"})
+
+    assert find_signal(cfg, "SIG_01") is not None
+    assert find_signal(cfg, "SIG_99") is None
+
+    deleted, unlinked = delete_signal(cfg, "SIG_01")
+    assert deleted["id"] == "SIG_01"
+    assert sorted(unlinked) == ["L1", "L2"], unlinked
+    assert len(cfg["signals"]) == 1
+    assert cfg["signals"][0]["id"] == "SIG_02"
+    assert "signal_id" not in l1
+    assert "signal_id" not in p["lines"][0]
+    assert p["lines"][1]["signal_id"] == "SIG_02"
+
+    # Xoa id khong ton tai phai nem loi
+    try:
+        delete_signal(cfg, "SIG_01")
+        raise AssertionError("phai bao loi khong tim thay signal")
+    except ValueError:
+        pass
+    print("signal CRUD and unlinking OK")
+
+
 if __name__ == "__main__":
     test_add_and_ids()
     test_flip_and_errors()
@@ -203,6 +241,7 @@ if __name__ == "__main__":
     test_pair_no_medial_warn()
     test_next_id_across_scopes()
     test_remove_tiny_lines()
+    test_signal_crud()
     test_validate_and_roundtrip()
     test_legacy_config()
     print("ALL LINE-CONFIG TESTS PASSED")

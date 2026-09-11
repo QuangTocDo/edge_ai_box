@@ -1,0 +1,21 @@
+# Hop dong dau vao: 1 SRC (video mp4 hay stream camera) + 1 CONFIG (loi da ve tu draw tool).
+# Ve tren host (can GUI): python tools/draw_lines.py snap_cam01.jpg --config configs/cam_01.yaml
+# Thu video: CAM_SOURCE=assets/video.mp4 docker compose up
+# That RTSP:  CAM_SOURCE="rtsp://user:pass@ip/stream" docker compose up -d
+services:
+  cam01:
+    build: .
+    image: traffic-edge
+    container_name: traffic-cam01
+    environment:
+      # INPUT 1 - SRC: file mp4 (test) hoac stream (that). Chi nhan qua env/arg, khong nam trong config.
+      - CAM_SOURCE=${CAM_SOURCE:-assets/video.mp4}
+      - HEARTBEAT_FILE=/tmp/heartbeat
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./camera_config.yaml:/app/camera_config.yaml:ro
+      - ./configs:/app/configs:ro
+      - ./assets:/app/assets:ro
+      - ./evidence:/app/evidence
+    command: [ "--config", "/app/camera_config.yaml", "--no-show" ]
+    restart: unless-stopped
