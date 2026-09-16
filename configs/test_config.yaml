@@ -1,5 +1,5 @@
 # Cau hinh chay test pipeline (thay cho default cung trong code).
-# Chay: python pipeline.py --run-config test_config.yaml
+# Chay: python pipeline.py --run-config configs/test_config.yaml
 # Tham so truyen truc tiep tren CLI van uu tien hon file nay.
 source: assets/video1.mp4   # file video | 0 = webcam | URL rtsp/http
 config: no_way.yaml # cau hinh camera/lines/rules

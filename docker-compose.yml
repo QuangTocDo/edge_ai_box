@@ -1,28 +1,45 @@
-# Hop dong dau vao: 1 SRC (video mp4 hay stream camera) + 1 CONFIG (loi da ve tu draw tool).
-# Ve tren host (can GUI): python tools/draw_lines.py snap_cam01.jpg --config configs/cam_01.yaml
-# Thu video: CAM_SOURCE=assets/video.mp4 docker compose up
-# That RTSP (khuyen nghi secrets file thay vi env plain):
-#   echo -n "rtsp://user:pass@ip/stream" > secrets/rtsp_cam01.txt
-#   CAM_SOURCE_FILE=/run/secrets/rtsp_cam01 docker compose up -d
+# Triển khai thiết bị biên (Edge Device): 1 Thiết bị biên = 1 Camera Container
+# Khởi chạy trên con biên:
+#   docker compose up -d
+# Chạy thử nghiệm video:
+#   CAM_SOURCE="assets/speed1.mp4" docker compose up --build
+# Xem log:
+#   docker compose logs -f
+# Dừng:
+#   docker compose down
+
 services:
-  cam01:
-    build: .
-    image: traffic-edge
-    container_name: traffic-cam01
+  traffic-edge:
+    image: traffic-edge:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: traffic-edge
+    restart: always
+    # network_mode host: giam toi da do tre RTSP va tranh packet loss tren Linux edge
+    network_mode: host
     environment:
-      # INPUT 1 - SRC: file mp4 (test) hoac stream (that). Chi nhan qua env/arg, khong nam trong config.
-      # Neu dung secrets file, dat CAM_SOURCE_FILE thay vi CAM_SOURCE (uu tien file).
-      - CAM_SOURCE=${CAM_SOURCE:-assets/video.mp4}
-      - HEARTBEAT_FILE=/app/data/heartbeat
+      - CONFIG_FILE=${CONFIG_FILE:-./camera_config.yaml}
+      - CAM_SOURCE=${CAM_SOURCE:-}
+      - IP_CAMERA=${IP_CAMERA:-}
+      - TK_CAMERA=${TK_CAMERA:-}
+      - PASSWORD_CAMERA=${PASSWORD_CAMERA:-}
+      - EXTEND_RSTP_LINK=${EXTEND_RSTP_LINK:-}
+      - IMGSZ=${IMGSZ:-}
+      - DEBUG_RULES=${DEBUG_RULES:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - YOLO_CONFIG_DIR=/tmp
     volumes:
-      # INPUT 2 - CONFIG: file loi da ve (chi doc, mount ca thu muc de base.yaml ke thua duoc)
-      - ./configs:/app/configs:ro
-      # video test (chi doc; khi chay RTSP that khong can)
-      - ./assets:/app/assets:ro
-      # evidence + outbox + heartbeat giu lai tren host khi restart container
+      # Mount file config rieng cua con bien nay (mac dinh camera_config.yaml)
+      - type: bind
+        source: ${CONFIG_FILE:-./camera_config.yaml}
+        target: /app/camera_config.yaml
+        read_only: true
       - ./evidence:/app/evidence
       - ./data:/app/data
-      # secrets (optional): - ./secrets/rtsp_cam01.txt:/run/secrets/rtsp_cam01:ro
-    command: ["--config", "/app/configs/cam_01.yaml", "--no-show"]
-    restart: unless-stopped
+      - ./assets:/app/assets:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"

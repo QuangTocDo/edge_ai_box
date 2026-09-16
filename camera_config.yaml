@@ -1,6 +1,9 @@
 camera_id: CAM_TEST_01
 config_version: cfg_v2
 timezone: Asia/Ho_Chi_Minh
+source: assets/uturn.mp4
+imgsz: 1280
+
 model:
   weights: weights/best_15thg9.pt
   conf: 0.6
@@ -16,33 +19,48 @@ model:
   - 7
   tracker: ocsort.yaml
   device: null
+
 polygons:
 - id: POLY_1
   kind: directional
   polygon:
-  - - 773
-    - 390
-  - - 907
-    - 396
-  - - 781
-    - 920
-  - - 132
-    - 921
-  - - 463
-    - 649
-  - - 643
-    - 499
-  - - 772
-    - 392
-  lines: []
+  - - 0
+    - 152
+  - - 541
+    - 112
+  - - 635
+    - 120
+  - - 639
+    - 153
+  - - 2
+    - 202
+  - - 2
+    - 152
+  lines:
+  - id: L1
+    p1:
+    - 6
+    - 171
+    p2:
+    - 300
+    - 142
+    allowed_sign: 1
+  - id: L2
+    p1:
+    - 350
+    - 135
+    p2:
+    - 601
+    - 121
+    allowed_sign: -1
   handler:
   - wrong_way
   - no_uturn
   rules:
     wrong_way:
-      enable: false
+      enable: true
     no_uturn:
-      enable: false
+      enable: true
     no_entry_road:
       enable: false
     red_light_running:
@@ -50,117 +68,34 @@ polygons:
     stop_line_violation:
       enable: false
     speeding:
-      enable: true
-  homography:
-    src:
-    - - 776
-      - 392
-    - - 906
-      - 397
-    - - 783
-      - 918
-    - - 137
-      - 919
-    dst:
-    - - 0.0
-      - 0.0
-    - - 7.5
-      - 0.0
-    - - 7.5
-      - 30.0
-    - - 0.0
-      - 30.0
-    measured_at: '2026-09-16T10:26:11'
-  road_dir:
-  - -0.5601194014985831
-  - 0.8284118879306774
-- id: POLY_2
-  kind: directional
-  polygon:
-  - - 1057
-    - 910
-  - - 1631
-    - 874
-  - - 1406
-    - 675
-  - - 1102
-    - 404
-  - - 959
-    - 403
-  - - 1059
-    - 911
-  lines: []
-  handler:
-  - wrong_way
-  - no_uturn
-  rules:
-    wrong_way:
       enable: false
-    no_uturn:
-      enable: false
-    no_entry_road:
-      enable: false
-    red_light_running:
-      enable: false
-    stop_line_violation:
-      enable: false
-    speeding:
-      enable: true
-  homography:
-    src:
-    - - 1058
-      - 904
-    - - 1629
-      - 874
-    - - 1102
-      - 405
-    - - 961
-      - 406
-    dst:
-    - - 0.0
-      - 0.0
-    - - 7.5
-      - 0.0
-    - - 7.5
-      - 30.0
-    - - 0.0
-      - 30.0
-    measured_at: '2026-09-16T10:27:01'
-  road_dir:
-  - -0.5499615126866775
-  - -0.8351899990800785
-lines:
-- id: L1
-  p1:
-  - 572
-  - 563
-  p2:
-  - 864
-  - 578
-  allowed_sign: 1
-- id: L2
-  p1:
-  - 994
-  - 573
-  p2:
-  - 1281
-  - 559
-  allowed_sign: -1
+  uturn_pairs:
+  - first: L1
+    second: L2
+  - first: L2
+    second: L1
+
+lines: []
 uturn_pairs: []
+
 wrong_way:
   min_hits: 3
   min_reverse_frames: 5
   min_reverse_px: 60.0
   cooldown_s: 10.0
+
 no_uturn:
   min_hits: 3
   cooldown_s: 10.0
+
 no_entry_road:
   dwell_s: 2.0
   min_hits: 3
   cooldown_s: 10.0
+
 evidence:
   dir: evidence
   jpeg_quality: 90
   retention_days: 7
+
 signals: []

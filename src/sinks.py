@@ -65,7 +65,8 @@ class AsyncEvidenceSaver:
             return False
 
     def _worker(self):
-        while not self._stop.is_set():
+        # Tiep tuc xu ly cho den khi stop VA queue da duoc tieu thu het
+        while not self._stop.is_set() or not self._q.empty():
             try:
                 item = self._q.get(timeout=0.2)
             except queue.Empty:
@@ -85,9 +86,10 @@ class AsyncEvidenceSaver:
             finally:
                 self._q.task_done()
 
-    def stop(self, timeout=5.0):
+    def stop(self, timeout=10.0):
+        """Dung worker va doi ghi sach se cac event con ton dong trong queue."""
         self._stop.set()
-        if self._thread is not None:
+        if self._thread is not None and self._thread.is_alive():
             self._thread.join(timeout=timeout)
 
 

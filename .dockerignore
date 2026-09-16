@@ -11,7 +11,7 @@ __pycache__/
 # Nang: tu tai/chia se rieng, khong bake (ngoai tru weights/best.pt cho edge)
 # (ignore theo noi dung thu muc de pattern !... co tac dung)
 weights/*
-!weights/best.pt
+!assets/best.pt
 *.pt
 *.onnx
 *.engine
@@ -26,9 +26,9 @@ evidence/
 *.mov
 *.mkv
 
-# Dev-only: draw tool + dataset script chay tren host
+# Docs, dev-only & test
+docs/
 tools/
 tests/
 s3_worker.py
-show_classes.py
 main.py

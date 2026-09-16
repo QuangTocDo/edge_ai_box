@@ -1,14 +1,15 @@
 """Xuat 8 anh mau, moi anh chua 1 class 0-7. Chay:
-  python show_classes.py              -> luu vao assets/class_samples/
-  python show_classes.py --show       -> vua luu vua hien thi
+  python tools/show_classes.py              -> luu vao assets/class_samples/
+  python tools/show_classes.py --show       -> vua luu vua hien thi
 """
 import sys
 from pathlib import Path
 
 import cv2
 
-DATA = Path("data_v1")
-OUT = Path("assets/class_samples")
+ROOT = Path(__file__).resolve().parent.parent
+DATA = ROOT / "data_v1"
+OUT = ROOT / "assets/class_samples"
 COLORS = [
     (0, 255, 0), (255, 0, 0), (0, 0, 255), (0, 255, 255),
     (255, 0, 255), (255, 255, 0), (0, 128, 255), (128, 0, 255),
