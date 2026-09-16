@@ -19,7 +19,7 @@ class NoUTurnRule(BaseRule):
     def __init__(self, min_hits=3, cooldown_s=10.0):
         super().__init__(min_hits=min_hits, cooldown_s=cooldown_s)
 
-    def update(self, track, lines, pairs, frame_idx, t):
+    def update(self, track, lines, pairs, frame_idx, t):  # pyright: ignore[reportIncompatibleMethodOverride]
         if len(track.pts) < 2 or track.hits < self.min_hits:
             return None
         prev, curr = track.pts[-2], track.pts[-1]

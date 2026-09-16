@@ -5,19 +5,19 @@ Cung diem cat nhu red_light_running nhung xe DUNG LAI sau vach
 Xe tiep tuc di vao giao lo thuoc ve red_light_running (multi-event).
 """
 from ..geometry import point_in_polygon
+from ._shared import crossed_stop_lines, light_at, red_state
 from .base import BaseRule, cooldown_ok
-from .red_light_running import crossed_stop_lines, light_at, red_state
 
 
 class StopLineRule(BaseRule):
-    """RED + dung sau vach -> STOP_LINE_VIOLATION (anh don)."""
+    """RED + dung sau vach -> STOP_LINE_VIOLATION (anh diptych / snapshot)."""
 
     TYPE = "stop_line_violation"
     PARAMS = {
         "min_hits": 3,
         "cooldown_s": 10.0,
         "stop_speed_px": 1.5,
-        "stop_dwell_s": 3.0,
+        "stop_dwell_s": 1.5,
         "dilemma_grace_s": 0.5,
         "dilemma_grace_ms": 500,
         "stop_line_speed_threshold_kmh": 3.0,
@@ -26,7 +26,7 @@ class StopLineRule(BaseRule):
     }
 
     def __init__(self, min_hits=3, cooldown_s=10.0, stop_speed_px=1.5,
-                 stop_dwell_s=3.0, dilemma_grace_s=0.5, dilemma_grace_ms=None,
+                 stop_dwell_s=1.5, dilemma_grace_s=0.5, dilemma_grace_ms=None,
                  stop_line_speed_threshold_kmh=None, cand_ttl_s=30.0,
                  intersection_clearance_zone=None):
         super().__init__(min_hits=min_hits, cooldown_s=cooldown_s)
@@ -40,7 +40,7 @@ class StopLineRule(BaseRule):
         self.cand_ttl_s = cand_ttl_s
         self.intersection_clearance_zone = intersection_clearance_zone
 
-    def update(self, track, lines, signals, frame_idx, t, frame=None, clearance=None):
+    def update(self, track, lines, signals, frame_idx, t, frame=None, clearance=None):  # pyright: ignore[reportIncompatibleMethodOverride]
         if len(track.pts) < 2 or track.hits < self.min_hits:
             return None
         sig_lines = [ln for ln in lines if ln.get("signal_id")]
@@ -80,8 +80,9 @@ class StopLineRule(BaseRule):
 
             stops[lid] = {
                 "cross_t": t,
-                "cross_bc": curr,
+                "cross_bc": list(curr),
                 "cross_bbox": list(track.bbox) if track.bbox is not None else None,
+                "cross_frame": frame.copy() if frame is not None else None,
                 "signal_id": sid,
                 "slow_since": None,
                 "fired": False,
@@ -97,7 +98,7 @@ class StopLineRule(BaseRule):
                 c["fired"] = True
                 continue
 
-            # Neu xe da tien vao clearance zone -> khong phai dung de vach
+            # Neu xe da tien vao clearance zone -> thuoc ve red_light_running
             if any(point_in_polygon(curr, poly.get("polygon", [])) for poly in clearance):
                 continue
 
@@ -119,6 +120,26 @@ class StopLineRule(BaseRule):
                     c["fired"] = True
                     track.cooldowns[self.TYPE] = t + self.cooldown_s
                     dwell_time = round(t - c["slow_since"], 2)
+
+                    cross_fr = c.get("cross_frame")
+                    now_fr = frame.copy() if frame is not None else None
+                    cross_bb = c.get("cross_bbox")
+                    curr_bb = list(track.bbox) if track.bbox is not None else None
+                    cross_bc = c.get("cross_bc")
+
+                    extra = {
+                        "light_state": "RED",
+                        "light_source": sig.get("source", "vision-hsv") if sig else "vision-hsv",
+                        "stop_dwell_s": dwell_time,
+                    }
+                    if frame is not None:
+                        # 2 anh Diptych: 1. De vach + 2. Dung qua vach
+                        extra["triptych"] = [cross_fr, now_fr]
+                        extra["triptych_timestamps"] = [round(c["cross_t"], 3), round(t, 3)]
+                        extra["triptych_bboxes"] = [cross_bb, curr_bb]
+                        extra["triptych_bcs"] = [cross_bc, list(curr)]
+                        extra["triptych_captions"] = ["1 DE VACH", "2 DUNG QUA VACH"]
+
                     return {
                         "type": self.TYPE,
                         "track_id": track.tid,
@@ -129,11 +150,7 @@ class StopLineRule(BaseRule):
                         "line_id": lid,
                         "frame_idx": frame_idx,
                         "t": t,
-                        "extra": {
-                            "light_state": "RED",
-                            "light_source": sig.get("source", "vision-hsv") if sig else "vision-hsv",
-                            "stop_dwell_s": dwell_time,
-                        },
+                        "extra": extra,
                     }
             else:
                 c["slow_since"] = None  # dang chay -> tam dung dem

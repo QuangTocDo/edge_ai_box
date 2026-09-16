@@ -46,12 +46,18 @@ def create(name, params):
     """Dung 1 instance rule tu ten + params dict.
 
     - Ten la -> KeyError ke ten hop le.
-    - Key thua trong params (vd key cu da bo) -> tu dong bo, khong crash.
+    - Key la (typo / key cu da bo) -> KeyError ro rang, khong lang le bo
+      (fail-fast: loi config phai vo ngay luc khoi dong, khong chay sai im lang).
     """
     if name not in RULE_REGISTRY:
         raise KeyError(
             f"rule la '{name}'. Hop le: {sorted(RULE_REGISTRY)}")
     cls = RULE_REGISTRY[name]
+    unknown = [k for k in (params or {}) if k not in cls.PARAMS]
+    if unknown:
+        raise KeyError(
+            f"rule '{name}': param la {unknown}. "
+            f"Hop le: {sorted(cls.PARAMS)}")
     clean = {k: v for k, v in (params or {}).items() if k in cls.PARAMS}
     try:
         return cls(**clean)

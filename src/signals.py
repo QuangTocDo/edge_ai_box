@@ -4,11 +4,13 @@
 - Moi frame: crop ROI -> mask HSV do/vang/xanh -> mau troi + debounce
   2 frames lien tiep -> chot state. Khong can model ML.
 - Nguong HSV co ban ngay (`hsv`) + ban dem (`hsv_night`, chon theo gio).
+- Ho tro tu phat hien che do vang chop tat (flashing yellow mode) ban dem.
 """
 import cv2
 import numpy as np
 
 GREEN, YELLOW, RED, UNKNOWN = "GREEN", "YELLOW", "RED", "UNKNOWN"
+FLASHING_YELLOW = "FLASHING_YELLOW"
 
 DEFAULT_HSV = {
     "red": [[[0, 100, 100], [10, 255, 255]],
@@ -43,6 +45,8 @@ def classify_roi_hsv(crop, hsv_cfg=None):
             m = cv2.inRange(hsv, np.array(lo, dtype=np.uint8),
                             np.array(hi, dtype=np.uint8))
             mask = m if mask is None else cv2.bitwise_or(mask, m)
+        if mask is None:  # khong co range nao -> bo qua mau nay
+            continue
         ratio = float(np.count_nonzero(mask)) / total
         if ratio > best_ratio:
             best, best_ratio = state, ratio
@@ -84,6 +88,8 @@ class SignalStore:
                 "pending_state": UNKNOWN,
                 "pending_count": 0,
                 "yellow_to_red_latency_ms": None,
+                "is_flashing_yellow": False,
+                "_toggle_history": [],  # list (t, raw_state)
             }
         self.red_cfg = red_cfg or {}
         self.wall_min = wall_min
@@ -98,7 +104,7 @@ class SignalStore:
         return frame[y1:y2, x1:x2]
 
     def update(self, frame, t, wall_min=None):
-        """Classify moi ROI + debounce. Tra ve {signal_id: state}."""
+        """Classify moi ROI + debounce + phat hien vang chop tat. Tra ve {signal_id: state}."""
         if wall_min is not None:
             self.wall_min = wall_min
         hsv_cfg = pick_hsv_cfg(self.red_cfg, self.wall_min)
@@ -111,19 +117,42 @@ class SignalStore:
                 s["pending_count"] += 1
             else:
                 s["pending_state"], s["pending_count"] = raw, 1
+
+            # Quan sat chuyen trang thai de phat hien vang chop tat
+            hist = s["_toggle_history"]
+            if not hist or hist[-1][1] != raw:
+                hist.append((t, raw))
+            # Giu lich su trong vong 4 giay
+            while hist and (t - hist[0][0]) > 4.0:
+                hist.pop(0)
+
+            # Kiem tra vang chop tat: neu chi co YELLOW va UNKNOWN lien tuc toggle >= 3 lan
+            if len(hist) >= 4:
+                states_in_window = {st for _, st in hist}
+                if states_in_window.issubset({YELLOW, UNKNOWN}):
+                    s["is_flashing_yellow"] = True
+
             if s["pending_count"] >= debounce and raw != s["state"]:
                 prev = s["state"]
+                # Neu bat duoc solid GREEN hoac RED du lau, reset che do vang chop
+                if raw in (GREEN, RED):
+                    s["is_flashing_yellow"] = False
                 s["previous_state"] = prev
-                s["state"] = raw
+                s["state"] = FLASHING_YELLOW if s["is_flashing_yellow"] and raw in (YELLOW, UNKNOWN) else raw
                 s["state_changed_at"] = t
                 if prev == YELLOW and raw == RED \
                         and s.get("_yellow_t") is not None:
                     s["yellow_to_red_latency_ms"] = round(
                         (t - s["_yellow_t"]) * 1000.0, 1)
-            if raw == YELLOW and s["state"] == YELLOW:
+
+            if raw == YELLOW and s["state"] in (YELLOW, FLASHING_YELLOW):
                 s["_yellow_t"] = t
             s["updated_at"] = t
-            out[sid] = s["state"]
+
+            # Neu dang o che do vang chop tat ma debounce roi vao UNKNOWN/YELLOW, luon tra ve FLASHING_YELLOW
+            eff_state = FLASHING_YELLOW if s["is_flashing_yellow"] else s["state"]
+            s["state"] = eff_state
+            out[sid] = eff_state
         return out
 
     def get(self, sid):

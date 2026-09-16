@@ -153,12 +153,17 @@ def main():
     cfg_path = Path(sys.argv[sys.argv.index("--config") + 1]) \
         if "--config" in sys.argv else Path("camera_config.yaml")
     cfg_path = cfg_path.resolve()
+    is_new = not cfg_path.exists()
     cfg = load_config(cfg_path)
     st = DrawState(cfg)
     n_top = len(cfg.get("lines", []))
     n_nest = sum(len(p.get("lines", [])) for p in get_polygons(cfg))
     print(f"Da nap {n_top + n_nest} lines ({len(get_polygons(cfg))} polygons), "
           f"{len(cfg['uturn_pairs'])} pairs tu {cfg_path}")
+    if is_new:
+        print(f"CANH BAO: file {cfg_path} chua ton tai -> dang mo config TRANG. "
+              f"Neu muon sua hinh cu, chay lai voi --config <file cu> "
+              f"(vd --config camera_config.yaml). Nhan s se tao file moi.")
 
     cap = cv2.VideoCapture(src if not str(src).isdigit() else int(src))
     ok, frame = cap.read()
@@ -172,14 +177,16 @@ def main():
 
     msg, dirty, quit_armed = "", False, False
     tool_mode = "line"  # line | polygon (ve dinh polygon)
-    poly_pts, sel_poly, sel_signal = [], None, None
-    wizard = None  # {"poly_id": str|None} flow gop, None = tat
+    poly_pts: list = []
+    sel_poly: dict | None = None
+    sel_signal: dict | None = None
+    wizard: dict | None = None  # {"poly_id": str|None} flow gop, None = tat
     standalone = False  # True = ve wrong_way don, giu top-level
-    roi_drag = {"p0": None, "p1": None}  # keo chuot mode roi
-    calib = None  # {"poly_id": str, "stage": "pts"|"dir", "pts": [(x,y)]} mode c
-    violation = None  # None = menu chinh; "1".."5" = loi dang chon
-    pending_kind = None  # kind ep cho polygon sap ve (menu tu dat)
-    active_red_poly = None  # id polygon do dang ve (loi 4, de gan clearance)
+    roi_drag: dict = {"p0": None, "p1": None}  # keo chuot mode roi
+    calib: dict | None = None  # {"poly_id": str, "stage": "pts"|"dir", "pts": [(x,y)]} mode c
+    violation: str | None = None  # None = menu chinh; "1".."5" = loi dang chon
+    pending_kind: str | None = None  # kind ep cho polygon sap ve (menu tu dat)
+    active_red_poly: str | None = None  # id polygon do dang ve (loi 4, de gan clearance)
 
     def next_signal_id():
         used = {s.get("id") for s in cfg.get("signals", [])}
@@ -312,6 +319,7 @@ def main():
         nonlocal dirty, pending_kind, active_red_poly, sel_poly
         nonlocal tool_mode, wizard
         in_menu = violation is not None
+        kind: str | None = None
         if pending_kind is not None:
             kind, pending_kind = pending_kind, None
             print(f"--- Polygon kind={kind} (menu tu dat) ---")
@@ -584,9 +592,11 @@ def main():
         if kind == "line_created" and standalone:
             # phim w: line wrong_way don, giu top-level (loader tu boc vao
             # __GLOBAL__, rule chay voi moi track)
+            assert isinstance(payload, dict), payload
             print(f"Da ve {payload['id']} (wrong_way don, top-level)")
             dirty = True
         elif kind == "line_created":  # tu gan vao polygon chua hoac sat line
+            assert isinstance(payload, dict), payload
             attached = None
             if sel_poly is not None and line_near_or_in_polygon(
                     payload["p1"], payload["p2"], sel_poly.get("polygon", []), max_dist=50.0):
@@ -637,6 +647,7 @@ def main():
             banner1 = f"{menu_text()} | S=luu Q=thoat"
         else:
             m = get_mode(violation)
+            assert m is not None, violation
             banner1 = (f"LOI {m['label']} | tool: "
                        f"{'  '.join(tools_help(violation))} | 0=doi loi S=luu Q=thoat")
         cv2.putText(vis, banner1,
@@ -679,6 +690,7 @@ def main():
             else:
                 violation = kchr
                 m = get_mode(kchr)
+                assert m is not None, kchr
                 tool_mode, wizard = "line", None
                 st.cancel()
                 st.set_mode("directed")
@@ -733,7 +745,9 @@ def main():
                     print(msg)
                 continue
             elif kchr == "w":
-                msg = (f"Dang o loi {get_mode(violation)['violation']}: "
+                _m = get_mode(violation)
+                assert _m is not None, violation
+                msg = (f"Dang o loi {_m['violation']}: "
                        f"dung phim con ({' '.join(tools_help(violation))}), "
                        f"khong dung phim cu 'w' (nhan 0 de ve tu do)")
                 print(msg)
@@ -805,6 +819,7 @@ def main():
                        (f" (+rot {len(dropped)} pair)" if dropped else ""))
                 st.selected = None
             else:
+                assert sel_poly is not None
                 poly, dropped = delete_polygon(cfg, sel_poly["id"])
                 msg = (f"Da xoa polygon {poly['id']} "
                        f"(+{len(poly.get('lines', []))} lines con, "

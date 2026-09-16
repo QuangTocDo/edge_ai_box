@@ -1,4 +1,4 @@
-"""Tool ve virtual line bang click chuot, ghi vao camera_config.yaml.
+"""Tool ve virtual line bang click chuot, ghi vao no_way.yaml.
 Chay: python tools/draw_lines.py video.mp4
 Click theo thu tu: 2 diem L_NB -> 2 diem L_SB -> 2 diem L_medial (divider).
 Phim: f = dao chieu line vua ve | z = undo | s = luu | q = thoat
@@ -15,7 +15,7 @@ ORDER = [("L_NB", None), ("L_SB", None), ("L_medial", "divider")]
 
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else "assets/video.mp4"
-    cfg_path = Path("camera_config.yaml")
+    cfg_path = Path("no_way.yaml")
     cfg = yaml.safe_load(open(cfg_path)) if cfg_path.exists() else {"lines": []}
 
     cap = cv2.VideoCapture(src if not src.isdigit() else int(src))

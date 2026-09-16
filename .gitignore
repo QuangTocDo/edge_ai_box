@@ -6,21 +6,39 @@ __pycache__/
 venv/
 .env
 
-# ================= IDE / OS =================
+# ================= IDE / OS / Tooling =================
 .idea/
 .vscode/
 *.swp
 *~
 .DS_Store
 Thumbs.db
+opencode.json
+
+# ================= Tests =================
+tests/
+test/
+
+# ================= Docs / Markdown =================
+*.md
+
+# ================= Images =================
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.webp
+*.gif
+*.tiff
 
 # ================= Weights & training output =================
-# File nang (MB-GB), tai/luu rieng tren server train, khong commit
+# Chi cho phep model trong weights/
 *.pt
 *.onnx
 *.engine
 *.tflite
-weights/
+!weights/
+!weights/**
 runs/
 *.log
 
@@ -44,4 +62,3 @@ capture_*.jpg
 *.avi
 *.mov
 *.mkv
-

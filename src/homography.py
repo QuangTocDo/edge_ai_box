@@ -9,6 +9,8 @@ import math
 import cv2
 import numpy as np
 
+from .constants import EPS, RANSAC_THRESH
+
 
 def build_H(src_pts, dst_pts):
     """Dung ma tran H tu >=4 cap diem. Tra ve (H_list, inliers, err_m).
@@ -20,7 +22,7 @@ def build_H(src_pts, dst_pts):
     if src.shape[0] < 4 or dst.shape[0] < 4 or src.shape[0] != dst.shape[0]:
         raise ValueError(
             f"Can >=4 cap diem tuong ung, nhan {src.shape[0]}/{dst.shape[0]}")
-    H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 3.0)
+    H, mask = cv2.findHomography(src, dst, cv2.RANSAC, RANSAC_THRESH)
     if H is None or mask is None:
         raise ValueError("RANSAC that bai: cac diem thang hang hoac suy bien")
     mask = mask.ravel().astype(bool)
@@ -36,7 +38,7 @@ def pixel_to_road(H, u, v):
     """Map 1 diem pixel -> (X, Y) met. H la list 3x3."""
     m = np.asarray(H, dtype=np.float64).reshape(3, 3)
     p = m @ np.array([float(u), float(v), 1.0], dtype=np.float64)
-    if abs(p[2]) < 1e-9:
+    if abs(p[2]) < EPS:
         raise ValueError("Homography suy bien tai diem "
                          f"({u}, {v}): w~=0")
     return float(p[0] / p[2]), float(p[1] / p[2])
@@ -46,7 +48,7 @@ def longitudinal_dist(p1, p2, road_dir):
     """Quang duong chieu len huong duong (m). road_dir chua chuan hoa cung duoc."""
     dx, dy = road_dir
     n = math.hypot(dx, dy)
-    if n < 1e-9:
+    if n < EPS:
         raise ValueError("road_dir suy bien (do dai ~0)")
     ux, uy = dx / n, dy / n
     return (p2[0] - p1[0]) * ux + (p2[1] - p1[1]) * uy

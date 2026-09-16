@@ -10,118 +10,22 @@
     - Neu xe tiep tuc di chuyen ve phia truoc (forward_px >= confirm_dist_px)
       va duy tri van toc (speed >= confirm_speed_px) qua >= confirm_frames
       -> Xac nhan VUOT DEN DO (red_light_running).
-      Anh evidence duoc luu tai dung frame cat vach.
+      Xuat bo 3 anh triptych (1 truoc vach, 2 de vach, 3 xac nhan vuot)
+      ngay trong pha den DO, voi bounding box rieng cho tung shot!
     - Neu xe giam toc va dung lai gan vach -> Nhuong cho StopLineRule xu ly
       loi DUNG DE VACH (stop_line_violation).
   + Neu CO clearance polygon: Theo doi den khi xe tien vao clearance zone roi moi phat (mode 3 anh triptych).
 - Line co allow_right_on_red=true -> bo qua (re phai hop le khi den do).
 """
-from ..geometry import allowed_vec, crossing_sign, dot, point_in_polygon
+from ..geometry import allowed_vec, dot, point_in_polygon
+from ._shared import (crossed_stop_lines, is_before_stop_line, light_at,
+                      near_stop_line, red_state, stash_pre_frame)
 from .base import BaseRule, cooldown_ok
 
-
-def red_state(track):
-    """Scratch rieng den do tren track (tu clean khi track chet)."""
-    rs = getattr(track, "red", None)
-    if rs is None:
-        rs = track.red = {
-            "wl": False,
-            "wl_lines": set(),
-            "cands": {},
-            "stops": {},
-            "pre": None,
-            "pre_t": None,
-            "red_fired": False,
-        }
-    return rs
-
-
-def _dist_pt_seg(px, py, ax, ay, bx, by):
-    dx, dy = bx - ax, by - ay
-    n = dx * dx + dy * dy
-    if n < 1e-9:
-        return ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
-    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / n))
-    return ((px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2) ** 0.5
-
-
-def is_before_stop_line(pt, ln):
-    """Kiem tra diem pt co dang o phia truoc vach dung (chua vuot) hay khong."""
-    p1, p2 = ln["p1"], ln["p2"]
-    allowed_sign = ln.get("allowed_sign", 1)
-    ax, ay = allowed_vec(p1, p2, allowed_sign)
-    mx, my = (p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0
-    vx, vy = pt[0] - mx, pt[1] - my
-    return dot(vx, vy, ax, ay) < 0
-
-
-def crossed_stop_lines(track, lines):
-    """Cac stop-line vua cat dung chieu frame nay [(line, ...)]."""
-    if len(track.pts) < 2:
-        return []
-    prev, curr = track.pts[-2], track.pts[-1]
-    out = []
-    for ln in lines:
-        if ln.get("role") == "divider":
-            continue
-        sign = crossing_sign(prev, curr, ln["p1"], ln["p2"])
-        if sign != 0 and sign == ln.get("allowed_sign", 1):
-            out.append(ln)
-    return out
-
-
-def near_stop_line(track, lines, px):
-    """Kiem tra xe co o gan bat ky stop-line nao trong khoang cach px."""
-    if not track.pts:
-        return False
-    curr = track.pts[-1]
-    for ln in lines:
-        if ln.get("role") == "divider":
-            continue
-        ax, ay = ln["p1"]
-        bx, by = ln["p2"]
-        if _dist_pt_seg(curr[0], curr[1], ax, ay, bx, by) <= px:
-            return True
-    return False
-
-
-def stash_pre_frame(track, lines, signals, t, frame, px=150.0):
-    """Luu frame truoc vach luc den RED lam anh 1 cho triptych (neu can)."""
-    if frame is None or len(track.pts) < 1:
-        return
-    curr = track.pts[-1]
-    rs = red_state(track)
-    for ln in lines:
-        if ln.get("role") == "divider":
-            continue
-        sid = ln.get("signal_id")
-        if not sid:
-            continue
-        ax, ay = ln["p1"]
-        bx, by = ln["p2"]
-        if _dist_pt_seg(curr[0], curr[1], ax, ay, bx, by) <= px:
-            if is_before_stop_line(curr, ln):
-                state, _ = light_at(signals, sid, t)
-                if state == "RED":
-                    rs["pre"] = frame.copy()
-                    rs["pre_t"] = t
-                    return
-
-
-def light_at(signals, sid, t, default_ttl=1.0):
-    """(state, sig_dict) tai thoi diem t. Cu het han -> UNKNOWN."""
-    if not sid or not signals:
-        return "UNKNOWN", None
-    sig = signals.get(sid) if hasattr(signals, "get") else None
-    if not sig:
-        return "UNKNOWN", None
-    if isinstance(sig, str):
-        sig = {"state": sig, "updated_at": t, "state_changed_at": t, "ttl_s": default_ttl, "source": "test"}
-    ttl = float(sig.get("ttl_s", default_ttl))
-    up = sig.get("updated_at", -1.0)
-    if up >= 0 and (t - up) >= ttl:
-        return "UNKNOWN", sig
-    return sig.get("state", "UNKNOWN"), sig
+# Re-export de tuong thich (code cu import tu day van chay).
+__all__ = ["RedLightRunningRule", "red_state", "crossed_stop_lines",
+           "is_before_stop_line", "near_stop_line", "light_at",
+           "stash_pre_frame"]
 
 
 class RedLightRunningRule(BaseRule):
@@ -162,7 +66,7 @@ class RedLightRunningRule(BaseRule):
         self.confirm_speed_px = float(confirm_speed_px)
         self.confirm_frames = int(confirm_frames)
 
-    def update(self, track, lines, signals, clearance, frame, frame_idx, t):
+    def update(self, track, lines, signals, clearance, frame, frame_idx, t):  # pyright: ignore[reportIncompatibleMethodOverride]
         if len(track.pts) < 2 or track.hits < self.min_hits:
             return None
         sig_lines = [ln for ln in lines if ln.get("signal_id")]
@@ -178,9 +82,8 @@ class RedLightRunningRule(BaseRule):
                     if t - c["cross_t"] > self.cand_ttl_s]:
             del rs["cands"][lid]
 
-        # Stash frame truoc vach luc den RED (neu dung mode triptych voi clearance)
-        if clearance:
-            stash_pre_frame(track, sig_lines, signals, t, frame, self.pre_zone_px)
+        # Luon luu truoc frame truoc vach luc den RED lam shot 1 cho triptych
+        stash_pre_frame(track, sig_lines, signals, t, frame, self.pre_zone_px)
 
         # Kiem tra cat stop-line
         for ln in crossed_stop_lines(track, sig_lines):
@@ -233,16 +136,21 @@ class RedLightRunningRule(BaseRule):
             # Tao candidate theo doi chuyen dong
             shot1 = rs.get("pre")
             shot1_t = rs.get("pre_t")
+            shot1_bb = rs.get("pre_bbox")
+            shot1_bc = rs.get("pre_bc")
             cross_frame = frame.copy() if frame is not None else None
+            cross_bbox = list(track.bbox) if track.bbox is not None else None
             rs["cands"][lid] = {
                 "line": ln,
                 "shot1": shot1,
                 "shot1_t": shot1_t,
+                "shot1_bbox": shot1_bb,
+                "shot1_bc": shot1_bc,
                 "cross_frame": cross_frame,
                 "cross_t": t,
                 "cross_frame_idx": frame_idx,
-                "cross_bc": curr,
-                "cross_bbox": list(track.bbox) if track.bbox is not None else None,
+                "cross_bc": list(curr),
+                "cross_bbox": cross_bbox,
                 "signal_id": sid,
                 "latency": sig.get("yellow_to_red_latency_ms") if sig else None,
                 "forward_px": 0.0,
@@ -257,8 +165,9 @@ class RedLightRunningRule(BaseRule):
 
             sid = c.get("signal_id")
             state, sig = light_at(signals, sid, t)
-            # Den da sang GREEN -> huy candidate
-            if state == "GREEN":
+            # Den da sang GREEN hoac dang bat dau chuyen sang GREEN -> huy candidate
+            pending_green = sig and sig.get("pending_state") == "GREEN"
+            if state in ("GREEN", "YELLOW") or pending_green:
                 c["fired"] = True
                 continue
 
@@ -281,9 +190,14 @@ class RedLightRunningRule(BaseRule):
                 shot3 = frame.copy() if frame is not None else None
                 shot1 = c["shot1"] if c.get("shot1") is not None else c["cross_frame"]
                 t1 = c["shot1_t"] if c.get("shot1_t") is not None else round(c["cross_t"] - 0.5, 3)
-                triptych = [shot1, c["cross_frame"], shot3]
+                shot1_bb = c.get("shot1_bbox") or c["cross_bbox"]
+                shot1_bc = c.get("shot1_bc") or c["cross_bc"]
 
-                return {
+                triptych = [shot1, c["cross_frame"], shot3] if frame is not None else None
+                triptych_bboxes = [shot1_bb, c["cross_bbox"], list(track.bbox) if track.bbox is not None else None]
+                triptych_bcs = [shot1_bc, c["cross_bc"], curr]
+
+                ev = {
                     "type": self.TYPE,
                     "track_id": track.tid,
                     "cls": track.cls,
@@ -303,9 +217,13 @@ class RedLightRunningRule(BaseRule):
                             round(c["cross_t"], 3),
                             round(t, 3),
                         ],
-                        "triptych": triptych,
+                        "triptych_bboxes": triptych_bboxes,
+                        "triptych_bcs": triptych_bcs,
                     },
                 }
+                if triptych:
+                    ev["extra"]["triptych"] = triptych
+                return ev
 
             # Case 2: Khong co clearance -> Movement / Velocity Confirmation
             else:
@@ -337,7 +255,13 @@ class RedLightRunningRule(BaseRule):
                     if lid in rs.get("stops", {}):
                         rs["stops"][lid]["fired"] = True
 
-                    return {
+                    shot1 = c["shot1"] if c.get("shot1") is not None else c["cross_frame"]
+                    t1 = c["shot1_t"] if c.get("shot1_t") is not None else round(c["cross_t"] - 0.5, 3)
+                    shot1_bb = c.get("shot1_bbox") or c["cross_bbox"]
+                    shot1_bc = c.get("shot1_bc") or c["cross_bc"]
+                    curr_bb = list(track.bbox) if track.bbox is not None else c["cross_bbox"]
+
+                    ev = {
                         "type": self.TYPE,
                         "track_id": track.tid,
                         "cls": track.cls,
@@ -354,9 +278,24 @@ class RedLightRunningRule(BaseRule):
                             "yellow_to_red_latency_ms": c.get("latency"),
                             "forward_px": round(c["forward_px"], 1),
                             "speed_px": round(spd, 2),
-                            "evidence_frame": c.get("cross_frame"),
                         },
                     }
+
+                    # Neu co frame -> xuat 3 anh triptych voi bbox rieng tung shot
+                    if frame is not None and c.get("cross_frame") is not None:
+                        shot3 = frame.copy()
+                        ev["extra"]["triptych"] = [shot1, c["cross_frame"], shot3]
+                        ev["extra"]["triptych_timestamps"] = [
+                            round(t1, 3),
+                            round(c["cross_t"], 3),
+                            round(t, 3),
+                        ]
+                        ev["extra"]["triptych_bboxes"] = [shot1_bb, c["cross_bbox"], curr_bb]
+                        ev["extra"]["triptych_bcs"] = [shot1_bc, c["cross_bc"], curr]
+                    else:
+                        ev["extra"]["evidence_frame"] = c.get("cross_frame")
+
+                    return ev
 
         return None
 

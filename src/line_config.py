@@ -1,4 +1,4 @@
-"""Logic quan ly lines + uturn_pairs trong camera_config.yaml (khong GUI).
+"""Logic quan ly lines + uturn_pairs trong no_way.yaml (khong GUI).
 
 Schema (giong cu, pipeline/rules doc truc tiep):
 - directed: {id, p1:[x,y], p2:[x,y], allowed_sign: +1|-1}

@@ -7,11 +7,12 @@ lam tool tu tao line rac + cuop selection. Giai phap:
 """
 import math
 
+from .constants import EPS
 from .line_config import add_directed, add_divider, add_pair, iter_all_lines
 
 CREATE_DELAY_S = 0.35  # doi double-click di qua roi moi tao line
 DBL_WINDOW_S = 0.5     # click don trong window nay truoc dblclk thi huy
-NEAR_PX = 12
+NEAR_PX = 20
 MIN_LINE_PX = 10.0     # 2 diem gan nhau hon -> double-click cham, bo qua
 
 
@@ -21,7 +22,7 @@ def nearest_line(lines, x, y):
         ax, ay, bx, by = *ln["p1"], *ln["p2"]
         dx, dy = bx - ax, by - ay
         n = dx * dx + dy * dy
-        t = 0.0 if n < 1e-9 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / n))
+        t = 0.0 if n < EPS else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / n))
         d = math.hypot(x - (ax + t * dx), y - (ay + t * dy))
         if d <= bd:
             best, bd = ln, d
@@ -58,12 +59,12 @@ def mode_label(wizard, tool_mode, draw_mode):
 class DrawState:
     """Nhan su kien chuot + thoi gian now (giay, tuy y fake khi test)."""
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: dict):
         self.cfg = cfg
         self.mode = "directed"  # directed | divider | pair
-        self.clicks = []        # [(x, y, t)]
-        self.picks = []         # id lines cho pair
-        self.selected = None    # line dict dang chon
+        self.clicks: list = []        # [(x, y, t)]
+        self.picks: list = []         # id lines cho pair
+        self.selected: dict | None = None    # line dict dang chon
 
     # -- API cho GUI --
     def set_mode(self, mode):

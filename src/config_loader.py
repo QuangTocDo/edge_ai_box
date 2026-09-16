@@ -14,6 +14,7 @@ from pathlib import Path
 
 import yaml
 
+from .constants import HOMOGRAPHY_MAX_ERR_M
 from .geometry import parse_window
 from .rules import PLANNED_TYPES, known_types
 
@@ -170,7 +171,8 @@ def _build_polygon_H(cfg, poly):
         raise ConfigError(f"{pid}: homography loi: {e}")
     max_err = float(poly.get("homography_max_err_m",
                              cfg.get("speeding", {}).get(
-                                 "homography_max_err_m", 0.3)))
+                                 "homography_max_err_m",
+                                 HOMOGRAPHY_MAX_ERR_M)))
     if err > max_err:
         raise ConfigError(
             f"{pid}: homography reproj error {err:.2f}m > {max_err:.2f}m, "
@@ -185,8 +187,9 @@ def validate(cfg):
     for name in RULES:
         for k in (cfg.get(name) or {}):
             if k != "enable" and k not in RULE_REGISTRY[name].PARAMS:
-                warns.append(f"global '{name}': param la '{k}' "
-                             f"(hop le: {sorted(RULE_REGISTRY[name].PARAMS)})")
+                raise ConfigError(
+                    f"global '{name}': param la '{k}' "
+                    f"(hop le: {sorted(RULE_REGISTRY[name].PARAMS)})")
     pids = [p.get("id") for p in cfg["polygons"]]
     if len(pids) != len(set(pids)):
         raise ConfigError("Trung id polygon")
@@ -215,8 +218,9 @@ def validate(cfg):
                 raise ConfigError(f"{pid}: ten rule la '{rname}'")
             for k in (rblock or {}):
                 if k != "enable" and k not in RULE_REGISTRY[rname].PARAMS:
-                    warns.append(f"{pid}: param la '{rname}.{k}' "
-                                 f"(hop le: {sorted(RULE_REGISTRY[rname].PARAMS)})")
+                    raise ConfigError(
+                        f"{pid}: param la '{rname}.{k}' "
+                        f"(hop le: {sorted(RULE_REGISTRY[rname].PARAMS)})")
         r = {k: (v or {}).get("enable", True)
              for k, v in (p.get("rules") or {}).items() if k in RULES}
         ndir = [ln for ln in p.get("lines", [])

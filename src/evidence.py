@@ -85,8 +85,21 @@ def save_event(frame, event, lines, class_names, out_dir="evidence",
     eid, stem = _new_names(ts_local)
     ts = ts_local.isoformat()
 
-    img = frame.copy()
     x1, y1, x2, y2 = [int(v) for v in event["bbox"]]
+
+    # Crop can canh doi tuong vi pham (closeUpPhoto) tren frame goc truoc khi ve overlay
+    h_fr, w_fr = frame.shape[:2]
+    cx1, cy1 = max(0, x1), max(0, y1)
+    cx2, cy2 = min(w_fr, x2), min(h_fr, y2)
+    crop_path = None
+    if cx2 > cx1 and cy2 > cy1:
+        crop_img = frame[cy1:cy2, cx1:cx2]
+        crop_file = out / f"{stem}_crop.jpg"
+        cv2.imwrite(str(crop_file), crop_img,
+                    [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+        crop_path = str(crop_file)
+
+    img = frame.copy()
     cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 3)
     bc = event["bc"]
     cv2.circle(img, (int(bc[0]), int(bc[1])), 6, (0, 255, 255), -1)
@@ -123,6 +136,7 @@ def save_event(frame, event, lines, class_names, out_dir="evidence",
         "model_version": model_version,
         "line_id": event["line_id"],
         "extra": event.get("extra", {}),
+        "crop_path": crop_path,
         "image_hash_sha256": digest,
     }
     js = out / f"{stem}.json"
@@ -130,10 +144,12 @@ def save_event(frame, event, lines, class_names, out_dir="evidence",
     return str(jpg), str(js)
 
 
-def _annotate(img, event, lines, caption, ts_text, class_names):
-    x1, y1, x2, y2 = [int(v) for v in event["bbox"]]
+def _annotate(img, event, lines, caption, ts_text, class_names,
+              override_bbox=None, override_bc=None):
+    bb = override_bbox if override_bbox is not None else event["bbox"]
+    x1, y1, x2, y2 = [int(v) for v in bb]
     cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 3)
-    bc = event["bc"]
+    bc = override_bc if override_bc is not None else event["bc"]
     cv2.circle(img, (int(bc[0]), int(bc[1])), 6, (0, 255, 255), -1)
     for ln in lines:
         p1 = tuple(int(v) for v in ln["p1"])
@@ -155,30 +171,54 @@ def save_triptych(frames, frame_now, event, lines, class_names,
                   config_version="cfg_v1", model_version="best_v1",
                   jpeg_quality=90, timezone_name="Asia/Ho_Chi_Minh",
                   event_time=None, retention_days=7):
-    """Ghep doc 3 anh (truoc vach / de vach / trong nga tu) + 1 json chung.
+    """Ghep 2 anh (Diptych) hoac 3 anh (Triptych) + 1 json chung.
 
-    frames: [shot1|None, shot2|None, shot3|None] (BGR ndarrays).
+    frames: [shot1, shot2] hoac [shot1, shot2, shot3] (BGR ndarrays).
+    Moi shot dung dung bounding box va diem moc tai thoi diem chup shot do.
     Tra ve (jpg_path, json_path).
     """
     ts_local = _resolve_time(event_time, timezone_name)
     out, date_str = _event_paths(out_dir, camera_id, event["type"], ts_local)
-    eid, stem = _new_names(ts_local, suffix="_triptych")
+    suffix = "_diptych" if len(frames) == 2 else "_triptych"
+    eid, stem = _new_names(ts_local, suffix=suffix)
     ts = ts_local.isoformat()
     stamps = event.get("extra", {}).get("triptych_timestamps", [])
-    captions = ["1 TRUOC VACH", "2 DE VACH", "3 TRONG NGA TU"]
+    bboxes = event.get("extra", {}).get("triptych_bboxes", [])
+    bcs = event.get("extra", {}).get("triptych_bcs", [])
+    default_caps = ["1 DE VACH", "2 DUNG QUA VACH"] if len(frames) == 2 else ["1 TRUOC VACH", "2 DE VACH", "3 TRONG NGA TU"]
+    captions = event.get("extra", {}).get("triptych_captions", default_caps)
+
     shots = []
     for i, (fr, cap) in enumerate(zip(frames, captions)):
         if fr is None:
             fr = frame_now
         tst = stamps[i] if i < len(stamps) else ts
+        bb_i = bboxes[i] if i < len(bboxes) and bboxes[i] is not None else event["bbox"]
+        bc_i = bcs[i] if i < len(bcs) and bcs[i] is not None else event["bc"]
         shots.append(_annotate(fr.copy(), event, lines, cap, str(tst),
-                               class_names))
+                               class_names, override_bbox=bb_i, override_bc=bc_i))
     w = max(s.shape[1] for s in shots)
     norm = [s if s.shape[1] == w else cv2.resize(
         s, (w, int(s.shape[0] * w / s.shape[1]))) for s in shots]
     triptych = cv2.vconcat(norm)
     jpg = out / f"{stem}.jpg"
     cv2.imwrite(str(jpg), triptych, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+
+    # Tao anh can canh phuong tien (crop_path) tu shot dung lai / de vach
+    crop_path = None
+    target_idx = len(frames) - 1 if len(frames) > 0 else 0
+    target_fr = frames[target_idx] if len(frames) > target_idx and frames[target_idx] is not None else frame_now
+    target_bb = (bboxes[target_idx] if len(bboxes) > target_idx and bboxes[target_idx] is not None else event["bbox"])
+    if target_fr is not None and target_bb is not None:
+        h_fr, w_fr = target_fr.shape[:2]
+        cx1, cy1 = max(0, int(target_bb[0])), max(0, int(target_bb[1]))
+        cx2, cy2 = min(w_fr, int(target_bb[2])), min(h_fr, int(target_bb[3]))
+        if cx2 > cx1 and cy2 > cy1:
+            crop_img = target_fr[cy1:cy2, cx1:cx2]
+            crop_file = out / f"{stem}_crop.jpg"
+            cv2.imwrite(str(crop_file), crop_img,
+                        [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+            crop_path = str(crop_file)
 
     cls = int(event["cls"])
     meta = {
@@ -203,6 +243,7 @@ def save_triptych(frames, frame_now, event, lines, class_names,
         "line_id": event["line_id"],
         "extra": {k: v for k, v in event.get("extra", {}).items()
                   if k != "triptych"},
+        "crop_path": crop_path,
         "image_hash_sha256": hashlib.sha256(jpg.read_bytes()).hexdigest(),
     }
     js = out / f"{stem}.json"

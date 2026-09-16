@@ -12,6 +12,7 @@ from collections import deque
 import cv2
 import numpy as np
 
+from ..constants import EPS
 from ..geometry import point_in_polygon
 from ..homography import longitudinal_dist, pixel_to_road
 from .base import BaseRule, cooldown_ok
@@ -67,7 +68,7 @@ class SpeedingRule(BaseRule):
         prev, p0 = self._bg["gray"], self._bg["pts"]
         shift = 0.0
         if prev is not None and p0 is not None and len(p0) >= 10:
-            p1, st_mask, _ = cv2.calcOpticalFlowPyrLK(prev, gray, p0, None)
+            p1, st_mask, _ = cv2.calcOpticalFlowPyrLK(prev, gray, p0, None)  # pyright: ignore[reportCallIssue, reportArgumentType]
             if p1 is not None:
                 ok = st_mask.ravel().astype(bool)
                 if int(ok.sum()) >= 10:
@@ -78,7 +79,7 @@ class SpeedingRule(BaseRule):
         self._bg = {"idx": frame_idx, "shift": shift, "gray": gray, "pts": p0}
         return shift
 
-    def update(self, track, H, road_dir, H_error, frame, frame_idx, t):
+    def update(self, track, H, road_dir, H_error, frame, frame_idx, t):  # pyright: ignore[reportIncompatibleMethodOverride]
         st = self._st(track)
         st["limit"] = self.limit  # overlay dung de to mau
         st["skipped_shake"] = False
@@ -104,7 +105,7 @@ class SpeedingRule(BaseRule):
         i0 = max(0, len(st["hist"]) - 1 - self.window)
         t0, X0, Y0 = st["hist"][i0]
         dt = t - t0
-        if dt <= 1e-9:
+        if dt <= EPS:
             return None
         if self.measure == "longitudinal":
             dist_m = longitudinal_dist((X0, Y0), (X, Y), road_dir)

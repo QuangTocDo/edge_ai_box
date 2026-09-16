@@ -1,7 +1,7 @@
 """Pipeline: capture -> YOLO+OC-SORT -> rules -> evidence (edge headless).
 Chay host: python pipeline.py --source assets/video.mp4
 Chay docker: CAM_SOURCE="rtsp://user:pass@ip/stream" python pipeline.py --config /app/config.yaml --no-show
-  (thu tu source: CLI --source > env CAM_SOURCE > file camera source: > assets/video.mp4)
+  (thu tu source: CLI --source > env CAM_SOURCE > env IP_CAMERA (RTSP) > file camera source: > assets/video.mp4)
 Ve truoc tren host: python tools/draw_lines.py snap_cam01.jpg --config configs/cam_01.yaml
 """
 import argparse
@@ -15,14 +15,15 @@ from pathlib import Path
 import cv2
 import yaml
 
-from src.config_loader import (ConfigError, entries_for,
-                                 load_camera_config)
-from src.evidence import prune_old_dates, save_event, save_triptych
-from src.geometry import allowed_vec, now_minutes, point_in_polygon
+from src.capture import (AsyncStreamReader, _is_stream, _mask_source,
+                         _open_capture)
+from src.config_loader import ConfigError, load_camera_config
+from src.geometry import allowed_vec, now_minutes
+from src.infer import create_tracker
 from src.line_config import iter_all_lines
-from src.rules import create as create_rule
+from src.runner import build_runners, run_first_event, wanted_entries
 from src.signals import SignalStore
-from src.tracking import Tracker
+from src.sinks import handle_event, maybe_prune
 
 ARROW_LEN = 60
 COLORS = [
@@ -33,40 +34,51 @@ COLORS = [
 STOP = {"flag": False}  # SIGINT/SIGTERM -> dung loop, cleanup sach se
 
 
+def _read_secret(name, default=""):
+    """Doc secret: uu tien file {NAME}_FILE (vd /run/secrets/*), fallback env {NAME}.
+    Tra ve default neu ca hai deu trong. Dung cho thong tin nhay cam (RTSP pass)."""
+    fpath = os.environ.get(f"{name}_FILE", "")
+    if fpath:
+        try:
+            val = Path(fpath).read_text(encoding="utf-8").strip()
+            if val:
+                return val
+        except OSError as ex:
+            logging.warning("Khong doc duoc secrets file %s (%s), fallback env %s",
+                            fpath, ex, name)
+    return os.environ.get(name, default)
+
+
+def _resolve_camera_source(args_source, cfg_source):
+    """Uu tien nguon dau vao theo thu tu:
+    1. CLI --source (khi test thu cong voi video hoac RTSP truc tiep)
+    2. Secret / Env CAM_SOURCE
+    3. Auto-compose RTSP tu cac bien IP_CAMERA, TK_CAMERA, PASSWORD_CAMERA, EXTEND_RSTP_LINK
+    4. File config YAML (key source:)
+    5. Fallback mac dinh: assets/video.mp4
+    """
+    if args_source:
+        return args_source, "CLI --source"
+    env_src = _read_secret("CAM_SOURCE")
+    if env_src:
+        return env_src, "secrets/env CAM_SOURCE"
+    ip_cam = os.environ.get("IP_CAMERA")
+    if ip_cam:
+        tk = _read_secret("TK_CAMERA", "")
+        pw = _read_secret("PASSWORD_CAMERA", "")
+        ext = os.environ.get("EXTEND_RSTP_LINK", "/MediaInput/h264/stream_1")
+        if tk and pw:
+            return f"rtsp://{tk}:{pw}@{ip_cam}{ext}", "env IP_CAMERA (RTSP auto-composed)"
+        elif tk:
+            return f"rtsp://{tk}@{ip_cam}{ext}", "env IP_CAMERA (RTSP auto-composed)"
+        return f"rtsp://{ip_cam}{ext}", "env IP_CAMERA (RTSP auto-composed)"
+    if cfg_source:
+        return cfg_source, "file camera source:"
+    return "assets/video.mp4", "mac dinh assets/video.mp4"
+
+
 def _on_stop(signum, frame):
     STOP["flag"] = True
-
-
-def _mask_source(src):
-    """An user:pass trong RTSP khi log (khong lo credential)."""
-    if isinstance(src, str) and "://" in src and "@" in src:
-        try:
-            pre, rest = src.split("://", 1)
-            creds, tail = rest.split("@", 1)
-            user = creds.split(":", 1)[0]
-            return f"{pre}://{user}:***@{tail}"
-        except ValueError:
-            return "<rtsp>"
-    return src
-
-
-def _is_stream(src):
-    return isinstance(src, str) and src.startswith(("rtsp://", "rtsps://",
-                                                    "http://", "https://"))
-
-
-def _open_capture(src, attempts=5, delay_s=3.0):
-    """Mo VideoCapture co retry (cho RTSP rot mang). Tra ve cap hoac None."""
-    for i in range(max(1, attempts)):
-        cap = cv2.VideoCapture(src)
-        if cap.isOpened():
-            return cap
-        cap.release()
-        if i + 1 < attempts:
-            logging.warning("Khong mo duoc source %s (lan %d/%d), thu lai sau %.0fs",
-                            _mask_source(src), i + 1, attempts, delay_s)
-            time.sleep(delay_s)
-    return None
 
 
 def _touch_heartbeat(path):
@@ -90,6 +102,7 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
     for sid, s in (signals.snapshot() if signals else {}).items():
         x1, y1, x2, y2 = s["roi"]
         col = {"RED": (0, 0, 255), "YELLOW": (0, 255, 255),
+               "FLASHING_YELLOW": (0, 215, 255),
                "GREEN": (0, 255, 0)}.get(s["state"], (128, 128, 128))
         cv2.rectangle(img, (x1, y1), (x2, y2), col, 2)
         cv2.putText(img, f"{sid}:{s['state']}", (x1, max(0, y1 - 8)),
@@ -215,16 +228,9 @@ def main():
                          f"nao (ve xong tu draw tool chua? python tools/draw_lines.py "
                          f"snap.jpg --config {args.config})")
     mc = cfg["model"]
-    tracker = Tracker(weights=mc["weights"], conf=mc.get("conf", 0.4),
-                      imgsz=args.imgsz or mc.get("imgsz", 640),
-                      classes=mc.get("classes"),
-                      tracker_cfg=mc.get("tracker", "ocsort.yaml"),
-                      device=mc.get("device"))
-    # 1 instance rule cho moi (polygon x rule duoc bat). Ten rule anh xa
-    # sang class qua registry (them loi moi khong can sua pipeline).
-    runners = []
-    for e in cfg["_plan"]:
-        runners.append((e, create_rule(e["rule"], e["params"])))
+    tracker = create_tracker(mc, args.imgsz or 0)
+    # 1 instance rule cho moi (polygon x rule). Xem src/runner.build_runners.
+    runners = build_runners(cfg["_plan"])
     logging.info("[config] %s: %d rule dang bat",
                  cfg.get('camera_id'), len(runners))
     for e, _ in runners:
@@ -242,21 +248,27 @@ def main():
         logging.info("[signals] %d den: %s",
                      len(cfg['signals']), [s['id'] for s in cfg['signals']])
 
-    src = (args.source or os.environ.get("CAM_SOURCE")
-           or cfg.get("source") or "assets/video.mp4")
-    src_from = ("CLI --source" if args.source
-                else ("env CAM_SOURCE" if os.environ.get("CAM_SOURCE")
-                      else ("file camera source:" if cfg.get("source")
-                            else "mac dinh assets/video.mp4")))
+    src, src_from = _resolve_camera_source(args.source, cfg.get("source"))
     try:
         src = int(src)
     except (ValueError, TypeError):
         pass
-    cap = _open_capture(src)
-    if cap is None:
-        raise SystemExit(
-            f"[INPUT SRC] Khong mo duoc ({src_from}): {_mask_source(src)} "
-            f"(video can mount ./assets, RTSP can mang + dung pass)")
+
+    if _is_stream(src):
+        logging.info("Khoi tao AsyncStreamReader (chong tre buffer RTSP) cho %s",
+                     _mask_source(src))
+        cap = AsyncStreamReader(src, reconnect_fn=_open_capture,
+                                should_stop=lambda: STOP["flag"])
+        if not cap.isOpened():
+            raise SystemExit(
+                f"[INPUT SRC] Khong mo duoc stream ({src_from}): {_mask_source(src)}")
+    else:
+        cap = _open_capture(src)
+        if cap is None:
+            raise SystemExit(
+                f"[INPUT SRC] Khong mo duoc ({src_from}): {_mask_source(src)} "
+                f"(video can mount ./assets, RTSP can mang + dung pass)")
+
     fps_src = cap.get(cv2.CAP_PROP_FPS) or 30.0
     logging.info("Mo INPUT SRC OK (%s): %s (fps~%.1f)",
                  src_from, _mask_source(src), fps_src)
@@ -270,18 +282,16 @@ def main():
     rule_of = {id(e): r for e, r in runners}
     _touch_heartbeat(heartbeat)
     last_prune = start_t
+    camera_id = str(cfg.get("camera_id", "CAM"))
+    ev_dir = str(ev.get("dir", "evidence"))
+    retention_days = ev.get("retention_days", 7)
+
     while not STOP["flag"]:
         ok, frame = cap.read()
         if not ok or frame is None:
-            if _is_stream(src):  # RTSP/HTTP rot -> reconnect thay vi thoat
-                logging.warning("Mat frame tu %s, reconnect...",
-                                _mask_source(src))
-                cap.release()
-                cap = _open_capture(src)
-                if cap is None:
-                    logging.error("Reconnect that bai, dung pipeline")
-                    break
-                fps_src = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            if _is_stream(src):
+                # AsyncStreamReader tu dong reconnect, chi can cho frame
+                time.sleep(0.01)
                 continue
             break  # file video het -> ket thuc binh thuong
         frame_idx += 1
@@ -297,50 +307,31 @@ def main():
             continue
         signals.update(frame, t, wall_min)
         for st in tracks.values():
-            bc = st.pts[-1]
-            wanted = entries_for(bc, plan_entries, point_in_polygon, track=st)
+            wanted = wanted_entries(st, plan_entries)
             if not wanted:
                 counts["skipped"] += 1
                 continue  # ngoai moi polygon: hien overlay, khong chay rule
-            e = None
-            for entry in wanted:
-                rule = rule_of[id(entry)]
-                e = rule.run(entry, st, frame_idx, t, wall_min,
-                             frame=frame, signals=signals)
-                if e:
-                    break
+            e = run_first_event(st, wanted, rule_of, frame_idx, t,
+                                wall_min, frame, signals)
             if e:
                 counts[e["type"]] = counts.get(e["type"], 0) + 1
-                common = dict(
-                    out_dir=ev.get("dir", "evidence"),
-                    camera_id=cfg.get("camera_id", "CAM"),
-                    config_version=cfg.get("config_version", "cfg_v1"),
-                    model_version=Path(mc["weights"]).stem,
-                    jpeg_quality=ev.get("jpeg_quality", 90),
-                    timezone_name=cfg.get("timezone", "Asia/Ho_Chi_Minh"))
                 try:
-                    tri = e["extra"].pop("triptych", None)
-                    if tri is not None:
-                        jp, js = save_triptych(
-                            tri, frame, e, all_lines, tracker.names, **common)
-                    else:
-                        ev_frame = e["extra"].pop("evidence_frame", None)
-                        target_frame = ev_frame if ev_frame is not None else frame
-                        jp, js = save_event(target_frame, e, all_lines,
-                                            tracker.names, **common)
+                    jp, js = handle_event(
+                        e, frame=frame, all_lines=all_lines,
+                        names=tracker.names,
+                        out_dir=ev_dir, camera_id=camera_id,
+                        config_version=str(cfg.get("config_version", "cfg_v1")),
+                        model_version=Path(str(mc["weights"])).stem,
+                        jpeg_quality=int(ev.get("jpeg_quality", 90)),
+                        timezone_name=str(cfg.get("timezone",
+                                                  "Asia/Ho_Chi_Minh")))
                 except Exception:
                     logging.exception("Ghi evidence loi (bo qua event, khong sap)")
                     continue
                 # xoay vong theo ngay (throttle 5 phut, khong block inference)
-                try:
-                    if time.perf_counter() - last_prune > 300:
-                        prune_old_dates(
-                            Path(ev.get("dir", "evidence"))
-                            / cfg.get("camera_id", "CAM"),
-                            ev.get("retention_days", 7))
-                        last_prune = time.perf_counter()
-                except Exception:
-                    pass
+                last_prune = maybe_prune(ev_dir, camera_id,
+                                         retention_days, last_prune,
+                                         time.perf_counter())
                 logging.info("[%s] track=%s line=%s frame=%d -> %s",
                              e["type"], e["track_id"], e["line_id"], frame_idx, jp)
         if args.debug_rules and frame_idx % 30 == 1:
@@ -349,7 +340,7 @@ def main():
                 if not (st.reverse or st.line_flags or st.zones or has_red):
                     continue  # chi log track dang co trang thai
                 bc = st.pts[-1]
-                for entry in entries_for(bc, plan_entries, point_in_polygon, track=st):
+                for entry in wanted_entries(st, plan_entries):
                     rule = rule_of[id(entry)]
                     logging.debug("[dbg f%d] %s", frame_idx, rule.explain(
                         st, t=t, lines=entry["lines"], pairs=entry.get("pairs", []),
@@ -368,7 +359,7 @@ def main():
             if writer is None:
                 h, w = vis.shape[:2]
                 writer = cv2.VideoWriter(
-                    args.save, cv2.VideoWriter_fourcc(*"mp4v"), fps_src, (w, h))
+                    args.save, cv2.VideoWriter_fourcc(*"mp4v"), fps_src, (w, h))  # pyright: ignore[reportAttributeAccessIssue]
             writer.write(vis)
         if not args.no_show:
             try:

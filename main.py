@@ -1,44 +1,81 @@
-"""YOLO26n + FPS tu file mp4. Chay: python main.py assets/video.mp4"""
+"""Chay thu nghiem model ONNX tren video mp4 va do FPS.
+Chay: python main.py [video.mp4] [imgsz]
+      python main.py assets/red_light1.mp4 640
+"""
 import sys
 import time
+from pathlib import Path
 
 import cv2
 from ultralytics import YOLO
 
-VIDEO_PATH = sys.argv[1] if len(sys.argv) > 1 else "assets/red_lightr.mp4"
 
-model = YOLO("weights/best.pt")  # lan dau tu tai ve
-cap = cv2.VideoCapture(VIDEO_PATH)
-if not cap.isOpened():
-    raise SystemExit(f"Khong mo duoc file: {VIDEO_PATH}")
+def run_onnx_demo():
+    # File model ONNX va video mac dinh
+    onnx_path = "weights/best_15thg9.onnx"
+    pt_path = "weights/best_15thg9.pt"
+    video_path = "assets/red_light1.mp4"
+    imgsz = 640
+    device = 0  # 0: GPU (Quadro P2200 qua CUDAExecutionProvider), "cpu": CPU
 
-prev_t = time.perf_counter()
-start_t = prev_t
-count = 0
+    # 1. Neu chua co file ONNX, tu dong export tu file .pt
+    if not Path(onnx_path).is_file():
+        print(f"[*] Dang export {pt_path} sang {onnx_path}...")
+        pt_model = YOLO(pt_path)
+        pt_model.export(format="onnx", imgsz=imgsz, dynamic=False, simplify=True)
+        print("[*] Export ONNX thanh cong!")
 
-while True:
-    ok, frame = cap.read()
-    if not ok or frame is None:
-        break  # het video
+    # Xu ly tham so dong lenh
+    argv = sys.argv[1:]
+    if len(argv) >= 1 and not argv[0].isdigit():
+        video_path = argv[0]
+    if len(argv) >= 2 and argv[1].isdigit():
+        imgsz = int(argv[1])
+    elif len(argv) == 1 and argv[0].isdigit():
+        imgsz = int(argv[0])
 
-    results = model.predict(frame, verbose=False)
-    frame = results[0].plot()
+    # 2. Khoi tao model ONNX Runtime
+    print(f"[*] Nap model: {onnx_path} (device={device}, imgsz={imgsz})")
+    model = YOLO(onnx_path, task="detect")
 
-    # --- do FPS ---
-    now = time.perf_counter()
-    fps = 1.0 / (now - prev_t) if now != prev_t else 0
-    prev_t = now
-    count += 1
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise SystemExit(f"Khong mo duoc video: {video_path}")
 
-    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv2.imshow("YOLO26n - mp4", frame)
+    prev_t = time.perf_counter()
+    start_t = prev_t
+    count = 0
 
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+    print(f"[*] Bat dau chay video: {video_path} (Nhan 'q' de thoat)...")
+    while True:
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            break
 
-total = time.perf_counter() - start_t
-print(f"Frames: {count} | Time: {total:.1f}s | Avg FPS: {count/total:.1f}")
+        # Inference truc tiep qua ONNX Runtime (CUDAExecutionProvider tren GPU)
+        results = model.predict(frame, imgsz=imgsz, device=device, verbose=False)
+        annotated = results[0].plot()
 
-cap.release()
-cv2.destroyAllWindows()
+        # Do FPS
+        now = time.perf_counter()
+        fps = 1.0 / (now - prev_t) if now != prev_t else 0.0
+        prev_t = now
+        count += 1
+
+        cv2.putText(annotated, f"ONNX FPS: {fps:.1f} | GPU: Quadro P2200", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        cv2.imshow("ONNX Inference", annotated)
+
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
+    total = time.perf_counter() - start_t
+    if total > 0:
+        print(f"\n[*] Hoan tat! Frames: {count} | Thoi gian: {total:.1f}s | FPS trung binh: {count/total:.1f}")
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    run_onnx_demo()

@@ -26,7 +26,7 @@ class NoEntryRule(BaseRule):
             return polygon["_windows"]
         return [parse_window(w) for w in polygon.get("active_hours", [])]
 
-    def update(self, track, polygon, wall_min, frame_idx, t):
+    def update(self, track, polygon, wall_min, frame_idx, t):  # pyright: ignore[reportIncompatibleMethodOverride]
         pid = polygon["id"]
         if self._windows(polygon) and not in_active_hours(
                 wall_min, self._windows(polygon)):

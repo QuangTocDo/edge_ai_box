@@ -1,7 +1,7 @@
 """Don vach tim/divider thua sau khi U-turn chuyen sang sequence thuan.
 
-Chay kho (chi liet ke): python tools/strip_medial.py --config camera_config.yaml
-Ghi that:               python tools/strip_medial.py --config camera_config.yaml --apply
+Chay kho (chi liet ke): python tools/strip_medial.py --config no_way.yaml
+Ghi that:               python tools/strip_medial.py --config no_way.yaml --apply
 
 - Drop key `medial` khoi moi pair (rule hien tai bo qua).
 - Xoa divider line nao khong con pair nao dung lam first/second.
@@ -58,7 +58,7 @@ def strip(cfg):
 
 def main():
     cfg_path = Path(sys.argv[sys.argv.index("--config") + 1]) \
-        if "--config" in sys.argv else Path("camera_config.yaml")
+        if "--config" in sys.argv else Path("no_way.yaml")
     apply = "--apply" in sys.argv
     cfg = load_config(cfg_path)
     dividers, pairs, _ = scan(cfg)

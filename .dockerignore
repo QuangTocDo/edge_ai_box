@@ -9,11 +9,12 @@ __pycache__/
 .gitignore
 
 # Nang: tu tai/chia se rieng, khong bake (ngoai tru weights/best.pt cho edge)
-weights/
+# (ignore theo noi dung thu muc de pattern !... co tac dung)
+weights/*
+!weights/best.pt
 *.pt
 *.onnx
 *.engine
-!weights/best.pt
 runs/
 data_*/images/
 data_*/labels/
@@ -28,6 +29,6 @@ evidence/
 # Dev-only: draw tool + dataset script chay tren host
 tools/
 tests/
-view.py
+s3_worker.py
 show_classes.py
 main.py

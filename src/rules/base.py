@@ -4,6 +4,8 @@ Moi rule con phai dinh nghia:
 - TYPE: str — ten loai vi pham, khop key trong config (vd "wrong_way").
 - PARAMS: dict — key param hop le + gia tri mac dinh.
 - update(...): chay detect tren 1 track, tra ve event dict hoac None.
+  (Chu y: moi rule tu chuyen tham so update rieng, khong khop chu ky base —
+  pipeline luon goi qua run() nen day la co y, khong phai bug.)
 - explain(...): 1 dong ly do trang thai hien tai (phuc vu debug live).
 """
 

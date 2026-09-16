@@ -2,7 +2,7 @@
 # Chay: python pipeline.py --run-config test_config.yaml
 # Tham so truyen truc tiep tren CLI van uu tien hon file nay.
 source: assets/video1.mp4   # file video | 0 = webcam | URL rtsp/http
-config: camera_config.yaml # cau hinh camera/lines/rules
+config: no_way.yaml # cau hinh camera/lines/rules
 imgsz: 1920                 # 0 = lay tu camera_config; 480 = nhanh, 640 = chuan
 max_frames: 600            # 0 = chay het video
 no_show: true              # true = khong mo cua so (chay ngam do FPS)

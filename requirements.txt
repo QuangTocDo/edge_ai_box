@@ -1,9 +1,11 @@
 # Deps chay pipeline edge x86 CPU (host dung de dev + draw tool can GUI).
 # Pin theo env hien tai: ultralytics 8.4.143 / opencv 5.0.0 / numpy 2.5.3 / pyyaml 6.0.3
-# Docker x86 CPU: torch CPU duoc cai tu pytorch index truoc (nhe hon CUDA wheel).
+# torch/torchvision KHONG pin o day: host giu ban CUDA, Docker cai ban CPU
+# (pin cung version 2.7.1/0.22.1 trong Dockerfile de tranh mismatch torchvision::nms).
 ultralytics==8.4.143
 opencv-python==5.0.0.93
 numpy==2.5.3
 pyyaml==6.0.3
 pillow==10.2.0
 lap>=0.5.12
+boto3==1.43.94  # batch upload anh S3 (s3_worker.py cron 20:00)

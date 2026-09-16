@@ -20,7 +20,7 @@ class WrongWayRule(BaseRule):
         self.min_reverse_px = min_reverse_px
         self.min_speed_px = min_speed_px
 
-    def update(self, track, lines, frame_idx, t):
+    def update(self, track, lines, frame_idx, t):  # pyright: ignore[reportIncompatibleMethodOverride]
         if len(track.pts) < 2 or track.hits < self.min_hits:
             return None
         prev, curr = track.pts[-2], track.pts[-1]

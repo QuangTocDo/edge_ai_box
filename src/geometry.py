@@ -6,6 +6,8 @@
 """
 import math
 
+from .constants import EPS
+
 
 def bottom_center(x1, y1, x2, y2):
     """Diem tiep xuc banh xe/chan voi mat duong."""
@@ -25,7 +27,7 @@ def crossing_sign(prev, curr, p1, p2):
     rx, ry = curr[0] - prev[0], curr[1] - prev[1]
     sx, sy = p2[0] - p1[0], p2[1] - p1[1]
     denom = _cross(rx, ry, sx, sy)
-    if abs(denom) < 1e-9:
+    if abs(denom) < EPS:
         return 0  # song song
     qpx, qpy = p1[0] - prev[0], p1[1] - prev[1]
     t = _cross(qpx, qpy, sx, sy) / denom
@@ -44,7 +46,7 @@ def allowed_vec(p1, p2, allowed_sign):
     """
     lx, ly = p2[0] - p1[0], p2[1] - p1[1]
     n = math.hypot(lx, ly)
-    if n < 1e-9:
+    if n < EPS:
         return (0.0, 0.0)
     nx, ny = -ly / n, lx / n
     if allowed_sign < 0:
@@ -61,9 +63,9 @@ def dist(a, b):
 
 
 def _on_segment(px, py, ax, ay, bx, by):
-    return (min(ax, bx) - 1e-9 <= px <= max(ax, bx) + 1e-9
-            and min(ay, by) - 1e-9 <= py <= max(ay, by) + 1e-9
-            and abs(_cross(bx - ax, by - ay, px - ax, py - ay)) < 1e-9)
+    return (min(ax, bx) - EPS <= px <= max(ax, bx) + EPS
+            and min(ay, by) - EPS <= py <= max(ay, by) + EPS
+            and abs(_cross(bx - ax, by - ay, px - ax, py - ay)) < EPS)
 
 
 def point_in_polygon(pt, poly):
@@ -103,7 +105,7 @@ def distance_point_to_segment(p, a, b):
     bx, by = b
     dx, dy = bx - ax, by - ay
     l2 = dx * dx + dy * dy
-    if l2 < 1e-9:
+    if l2 < EPS:
         return math.hypot(px - ax, py - ay)
     t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / l2))
     proj_x = ax + t * dx
@@ -138,7 +140,7 @@ def polygon_valid(poly):
     area = sum(poly[i][0] * poly[(i + 1) % len(poly)][1]
                - poly[(i + 1) % len(poly)][0] * poly[i][1]
                for i in range(len(poly)))
-    return abs(area) > 1e-9
+    return abs(area) > EPS
 
 
 def parse_window(s):
