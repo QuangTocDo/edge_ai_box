@@ -84,7 +84,7 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
         cv2.putText(img, label, (x1 + 2, y1 - 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
-        # Thoi gian luu tru trong vung (dwell)
+        # Thoi gian luu tru trong vung (dwell no_entry_road)
         for zid, zs in st.zones.items():
             if not zs.get("inside"):
                 continue
@@ -93,6 +93,16 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
             ztxt = f"{zid} {t_video - zs['enter_t']:.1f}/{dw:.0f}s"
             cv2.putText(img, ztxt, (bc[0] - 40, bc[1] + 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+        # Thoi gian dung do (no_parking)
+        parking_st = getattr(st, "parking", {})
+        for pid, pz in parking_st.items():
+            if not pz or pz.get("fired"):
+                continue
+            pdw = t_video - pz["start_t"]
+            ptxt = f"PARK {pid} {pdw:.1f}s"
+            cv2.putText(img, ptxt, (bc[0] - 40, bc[1] + 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
 
         # Hien thi van toc neu co
         spd = getattr(st, "speed", None)

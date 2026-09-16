@@ -1,7 +1,6 @@
 """Menu chon loi cho tool ve (pure logic, test headless duoc).
 
-Phim 1-5 chon loi -> tool chi hien/nhan cac cong cu duoc phep cua loi do.
-Them loi 6 sau nay: them 1 dong vao VIOLATION_MODES (khong sua tool).
+Phim 1-6 chon loi -> tool chi hien/nhan cac cong cu duoc phep cua loi do.
 """
 from .rules.registry import CANONICAL_TYPES
 
@@ -33,6 +32,11 @@ VIOLATION_MODES = {
           "rules": ["speeding"],
           "tools": ["polygon", "calib"],
           "auto": "speed_zone"},  # polygon + H + road_dir
+    "6": {"violation": "no_parking",
+          "label": "6=no_parking (cam do xe)",
+          "rules": ["no_parking"],
+          "tools": ["polygon", "fields"],
+          "auto": "parking_zone"},  # polygon + dwell_s
 }
 
 # Phim con trong tung loi -> cong cu (hien tren help theo loi dang chon).
@@ -58,8 +62,7 @@ def tools_help(key):
     out = []
     for tool in allowed_tools(key):
         if tool == "fields":
-            # khong co phim bam, tu hoi terminal khi chot polygon
-            out.append("fields=(tu dong hoi classes/hours/dwell)")
+            out.append("fields=(tu dong hoi thong so)")
             continue
         out.append(f"{_tool_key(tool)}={SUBKEY_HELP[_tool_key(tool)]}")
         # Loi den do: them phim gan signal (k) khi co roi
@@ -112,7 +115,7 @@ def validate_tool(key, tool):
     """(ok, ly_do): cong cu co duoc phep trong loi dang chon khong."""
     m = get_mode(key)
     if m is None:
-        return False, "chua chon loi (nhan 1-5 truoc)"
+        return False, "chua chon loi (nhan 1-6 truoc)"
     # 'k' gan signal la alias cua 'roi' (chi loi den do co roi)
     if tool == "roi_link":
         if "roi" in m["tools"]:

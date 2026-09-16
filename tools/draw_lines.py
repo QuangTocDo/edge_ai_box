@@ -4,7 +4,8 @@ Chay: python tools/draw_lines.py assets/video.mp4 [--config camera_config.yaml]
 Chon loi truoc (bat buoc de ve moi):
   1=wrong_way (chi ve line) | 2=no_uturn (polygon+line+pair)
   3=no_entry (polygon banned) | 4=red_light (polygon lane+line+ROI+nga tu)
-  5=speeding (polygon+calib) | 0=ve menu tu do (legacy)
+  5=speeding (polygon+calib) | 6=no_parking (polygon cam do)
+  0=ve menu tu do (legacy)
 Sau khi chon loi, chi hien/nhan cong cu duoc phep:
   l=ve line | p=ve dinh polygon | a=gan pair tay | r=keo ROI den
   i=ve vung nga tu | c=hieu chuan H | k=gan signal vao line
@@ -184,7 +185,7 @@ def main():
     standalone = False  # True = ve wrong_way don, giu top-level
     roi_drag: dict = {"p0": None, "p1": None}  # keo chuot mode roi
     calib: dict | None = None  # {"poly_id": str, "stage": "pts"|"dir", "pts": [(x,y)]} mode c
-    violation: str | None = None  # None = menu chinh; "1".."5" = loi dang chon
+    violation: str | None = None  # None = menu chinh; "1".."6" = loi dang chon
     pending_kind: str | None = None  # kind ep cho polygon sap ve (menu tu dat)
     active_red_poly: str | None = None  # id polygon do dang ve (loi 4, de gan clearance)
 
@@ -198,7 +199,6 @@ def main():
     def on_mouse(ev, x, y, *_):
         nonlocal dirty, sel_poly, sel_signal, wizard
         now = time.monotonic()
-        # Gate theo loi dang chon: chan click ve cong cu khong duoc phep
         if violation is not None and ev in (
                 cv2.EVENT_LBUTTONDOWN, cv2.EVENT_LBUTTONUP):
             need = None
@@ -215,7 +215,7 @@ def main():
                 elif st.mode == "pair":
                     need = "pair"
                 else:
-                    need = "divider"  # legacy, menu khong cho
+                    need = "divider"
             if need is not None:
                 ok, why = validate_tool(violation, need)
                 if not ok:
@@ -224,7 +224,7 @@ def main():
         if tool_mode == "calib":
             if ev == cv2.EVENT_LBUTTONDOWN and calib is not None:
                 if calib["stage"] == "dir" and len(calib["pts"]) >= 2:
-                    return  # du 2 diem huong, Enter de chot
+                    return
                 calib["pts"].append((x, y))
             return
         if tool_mode == "roi":
@@ -264,7 +264,6 @@ def main():
                 sel_poly = None
                 sel_signal = None
             else:
-                # Thu chon signal truoc (hop den nho thuong nam trong polygon)
                 clicked_sig = None
                 for s in cfg.get("signals", []):
                     roi = s.get("roi")
@@ -294,8 +293,6 @@ def main():
             dirty |= handle_action(*st.on_down(x, y, now), st)
 
     def close_wizard_polygon():
-        """Enter trong wizard phim 1: tao directional polygon ngay,
-        chuyen sang ve 2 lines. Tra ve True neu tao."""
         nonlocal dirty, wizard, tool_mode
         if len(poly_pts) < 3:
             print(f"Can >=3 dinh (dang co {len(poly_pts)})")
@@ -314,8 +311,6 @@ def main():
         return True
 
     def close_polygon():
-        """Chot polygon. Menu mode: kind lay tu pending_kind, rules tu dong
-        theo loi dang chon. Tra ve pid hoac None."""
         nonlocal dirty, pending_kind, active_red_poly, sel_poly
         nonlocal tool_mode, wizard
         in_menu = violation is not None
@@ -328,15 +323,19 @@ def main():
         if len(poly_pts) < 3:
             print(f"Can >=3 dinh (dang co {len(poly_pts)})")
             return False
-        # Legacy (khong chon loi): hoi tay nhu cu
         if not in_menu:
             kind = (input("kind [banned/directional/intersection] (mac dinh directional): ")
                     or "directional").strip()
         elif kind is None:
-            # Menu nhung khong co pending_kind (vd Enter lac): suy tu loi
-            kind = "banned" if violation == "3" else "directional"
+            kind = "banned" if violation in ("3", "6") else "directional"
         try:
-            if kind == "banned":
+            if violation == "6":
+                dw = input("dwell_s thoi gian do xe de bao loi (mac dinh 10s): ").strip() or "10"
+                p = add_polygon(cfg, poly_pts, kind="banned",
+                                banned_classes=[],
+                                active_hours=[],
+                                dwell_s=float(dw))
+            elif kind == "banned":
                 bc = input("banned_classes vd '0,4' (mac dinh rong): ").strip()
                 ah = input("active_hours vd '18:00-05:00' (mac dinh rong): "
                            ).strip()
@@ -368,7 +367,6 @@ def main():
             dirty = True
             if in_menu:
                 _apply_menu_rules(p, kind)
-                # Loi 2: tu chuyen sang ve 2 lines trong polygon moi
                 if violation == "2" and kind == "directional":
                     sel_poly = p
                     st.set_mode("directed")
@@ -382,7 +380,6 @@ def main():
             return None
 
     def _apply_menu_rules(p, kind):
-        """Gan rules + lien ket phu sau khi tao polygon trong menu."""
         nonlocal active_red_poly, sel_poly
         if kind == "intersection" and violation == "4":
             p["rules"] = rules_off()
@@ -401,14 +398,12 @@ def main():
         if violation == "4":
             active_red_poly = p["id"]
         if violation == "5":
-            sel_poly = p  # tu chon de nhan c hieu chuan ngay
+            sel_poly = p
         print(f"Da bat rules cho {p['id']}: "
               f"{[r for r, b in p['rules'].items() if b.get('enable')]}")
 
     def close_calib():
         nonlocal dirty, calib, tool_mode
-        """Enter trong mode hieu chuan: pts -> hoi toa do met -> tinh H;
-        dir -> chot road_dir. Tra ve True neu xong 1 buoc."""
         from datetime import datetime
         if calib is None:
             return False
@@ -457,7 +452,6 @@ def main():
             print("Da luu H. Click 2 diem A->B doc huong duong "
                   "roi Enter de chot road_dir")
             return True
-        # stage dir
         pts = calib["pts"]
         if len(pts) != 2:
             print(f"Can dung 2 diem huong (dang co {len(pts)}), Esc huy")
@@ -478,20 +472,11 @@ def main():
         return True
 
     def _busy():
-        """True neu dang ve do (clicks/picks/dinh/wizard/calib/roi keo do)."""
         return bool(st.clicks or st.picks or poly_pts
                     or wizard is not None or calib is not None
                     or roi_drag.get("p0") is not None)
 
-    def _need_violation():
-        if violation is None:
-            msg = "Chua chon loi (nhan 1-5 truoc)"
-            print(msg)
-            return True
-        return False
-
     def _gate(tool):
-        """Chan cong cu khong thuoc loi dang chon. Tra ve True neu chan."""
         ok, why = validate_tool(violation, tool)
         if not ok:
             print(f"Bi chan: {why}")
@@ -499,7 +484,6 @@ def main():
         return False
 
     def _start_polygon_draw(kind):
-        """Bat dau ve dinh polygon voi kind ep san (menu)."""
         nonlocal tool_mode, wizard, standalone, pending_kind
         st.cancel()
         poly_pts.clear()
@@ -507,7 +491,7 @@ def main():
         wizard = None
         standalone = False
         pending_kind = kind
-        label = {"directional": "lane/zone", "banned": "vung cam",
+        label = {"directional": "lane/zone", "banned": "vung cam/cam do",
                  "intersection": "vung nga tu"}.get(kind, kind)
         print(f"Ve {label}: click tung dinh -> Enter chot, Esc huy")
 
@@ -517,7 +501,6 @@ def main():
         st.set_mode("directed")
         tool_mode = "line"
         wizard = None
-        # Loi 1 wrong_way: line doc lap top-level; loi khac gan vao polygon
         standalone = (violation == "1")
         if standalone:
             print("Ve line nguoc chieu: click 2 diem/line (top-level)")
@@ -565,7 +548,6 @@ def main():
         return f"Hieu chuan {sel_poly['id']}: click >=4 diem -> Enter"
 
     def _link_signal():
-        """Gan signal co san vao line dang chon (phim k, loi 4)."""
         nonlocal dirty
         if st.selected is None or st.selected.get("role") == "divider":
             return "Chua chon line (double-click line truoc)"
@@ -590,12 +572,10 @@ def main():
     while True:
         kind, payload = st.poll(time.monotonic())
         if kind == "line_created" and standalone:
-            # phim w: line wrong_way don, giu top-level (loader tu boc vao
-            # __GLOBAL__, rule chay voi moi track)
             assert isinstance(payload, dict), payload
             print(f"Da ve {payload['id']} (wrong_way don, top-level)")
             dirty = True
-        elif kind == "line_created":  # tu gan vao polygon chua hoac sat line
+        elif kind == "line_created":
             assert isinstance(payload, dict), payload
             attached = None
             if sel_poly is not None and line_near_or_in_polygon(
@@ -642,7 +622,6 @@ def main():
                        calib_pts=calib["pts"] if calib else None,
                        calib_dir=(calib["pts"][:2]
                                   if calib and calib["stage"] == "dir" else None))
-        # Banner dong 1: menu tuy theo loi dang chon (chi hien tool duoc phep)
         if violation is None:
             banner1 = f"{menu_text()} | S=luu Q=thoat"
         else:
@@ -665,7 +644,7 @@ def main():
                     (10, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
         y0 = 108
         for p in get_polygons(cfg):
-            on = [r for r in ("wrong_way", "no_uturn", "no_entry_road", "red_light_running", "stop_line")
+            on = [r for r in ("wrong_way", "no_uturn", "no_entry_road", "no_parking", "red_light_running", "stop_line")
                   if (p.get("rules") or {}).get(r, {}).get("enable", True)]
             cv2.putText(vis, f"{p['id']}: {'+'.join(on) if on else 'tat het'}",
                         (10, y0), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
@@ -680,10 +659,10 @@ def main():
         key = cv2.waitKey(20) & 0xFF
         msg = ""
         if key != ord("q"):
-            quit_armed = False  # phim khac thi huy trang thai cho-thoat
+            quit_armed = False
 
         kchr = chr(key) if key < 256 else ""
-        if kchr in ("1", "2", "3", "4", "5"):
+        if kchr in ("1", "2", "3", "4", "5", "6"):
             if _busy():
                 msg = "Dang ve do, Esc truoc khi doi loi"
                 print(msg)
@@ -712,10 +691,7 @@ def main():
                 st.set_mode("directed")
                 pending_kind = None
                 print(menu_text())
-                print("Che do tu do (legacy): 1=zone gop w=wrong-way 2=divider "
-                      "3=pair 4=polygon 5=ROI c=calib")
             continue
-        # --- Che do co chon loi: chi nhan phim con duoc phep ---
         if violation is not None:
             if kchr in ("l", "p", "a", "r", "i", "c", "k"):
                 if _busy() and kchr in ("p", "i"):
@@ -729,9 +705,8 @@ def main():
                 if kchr == "l":
                     _start_line_draw()
                 elif kchr == "p":
-                    # polygon lane/vung cam tuy loi
                     _start_polygon_draw(
-                        "banned" if violation == "3" else "directional")
+                        "banned" if violation in ("3", "6") else "directional")
                 elif kchr == "a":
                     _start_pair_mode()
                 elif kchr == "r":
@@ -744,21 +719,12 @@ def main():
                     msg = _link_signal()
                     print(msg)
                 continue
-            elif kchr == "w":
-                _m = get_mode(violation)
-                assert _m is not None, violation
-                msg = (f"Dang o loi {_m['violation']}: "
-                       f"dung phim con ({' '.join(tools_help(violation))}), "
-                       f"khong dung phim cu 'w' (nhan 0 de ve tu do)")
-                print(msg)
-                continue
         else:
-            # --- Che do tu do legacy (violation is None): giu phim cu ---
             if key == ord("1"):
                 st.cancel()
                 poly_pts.clear()
                 tool_mode = "polygon"
-                wizard = {"poly_id": None}  # ve dinh truoc, Enter chot
+                wizard = {"poly_id": None}
                 standalone = False
                 print("Zone flow: click tung dinh polygon -> Enter chot, Esc huy")
                 continue
@@ -797,9 +763,7 @@ def main():
                 msg = _start_calib_mode()
                 print(msg)
                 continue
-        if False:
-            pass
-        elif key == ord("f") and st.selected:
+        if key == ord("f") and st.selected:
             try:
                 msg = f"{st.selected['id']} sign=" \
                       f"{flip_line(cfg, st.selected['id']):+d}"
@@ -833,7 +797,6 @@ def main():
             print(msg)
             dirty = True
         elif key in (ord("k"), ord("l")) and st.selected and st.selected.get("role") != "divider":
-            # Menu mode: chi 'k' + phai thuoc loi 4; free mode: 'k'/'l' deu duoc
             if violation is not None:
                 if kchr == "l":
                     msg = "Dung phim 'k' de gan signal (phim 'l' la ve line)"
@@ -847,7 +810,7 @@ def main():
         elif key == ord("s"):
             warns = validate(cfg) + validate_polygons(cfg)
             save_config(cfg, cfg_path)
-            back = load_config(cfg_path)  # doc lai de xac nhan
+            back = load_config(cfg_path)
             now_ids = ({l["id"] for l in iter_all_lines(cfg)},
                        len(cfg["uturn_pairs"]), len(get_polygons(cfg)))
             back_ids = ({l["id"] for l in iter_all_lines(back)},
@@ -860,7 +823,7 @@ def main():
             print(msg)
             for w in warns:
                 print(" -", w)
-        elif key == 27:  # Esc: huy sach se ve che do ve line
+        elif key == 27:
             st.cancel()
             st.set_mode("directed")
             tool_mode = "line"
@@ -873,7 +836,7 @@ def main():
                 print("Da huy zone flow")
             wizard = None
             standalone = False
-        elif key == 13:  # Enter: re nhanh theo flow hien tai
+        elif key == 13:
             if tool_mode == "calib":
                 if violation is not None and _gate("calib"):
                     continue

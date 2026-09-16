@@ -3,11 +3,10 @@ config_version: cfg_v2
 timezone: Asia/Ho_Chi_Minh
 source: assets/uturn.mp4
 imgsz: 1280
-
 model:
   weights: weights/best_15thg9.pt
-  conf: 0.6
-  imgsz: 640
+  conf: 0.7
+  imgsz: 1280
   classes:
   - 0
   - 1
@@ -19,49 +18,229 @@ model:
   - 7
   tracker: ocsort.yaml
   device: null
-
 polygons:
 - id: POLY_1
+  kind: banned
+  polygon:
+  - - 278
+    - 87
+  - - 272
+    - 139
+  - - 331
+    - 141
+  - - 337
+    - 95
+  - - 279
+    - 84
+  lines: []
+  handler:
+  - no_entry_road
+  banned_classes: []
+  active_hours: []
+  dwell_s: 3.0
+  entry_lines: []
+  rules:
+    wrong_way:
+      enable: false
+    no_uturn:
+      enable: false
+    no_entry_road:
+      enable: false
+    no_parking:
+      enable: true
+    red_light_running:
+      enable: false
+    stop_line_violation:
+      enable: false
+    speeding:
+      enable: false
+  uturn_pairs: []
+- id: POLY_2
   kind: directional
   polygon:
-  - - 0
-    - 152
-  - - 541
-    - 112
-  - - 635
-    - 120
-  - - 639
-    - 153
+  - - 342
+    - 100
+  - - 452
+    - 90
+  - - 467
+    - 132
+  - - 480
+    - 173
+  - - 492
+    - 218
+  - - 507
+    - 287
+  - - 501
+    - 362
+  - - 475
+    - 507
+  - - 449
+    - 607
+  - - 418
+    - 715
   - - 2
-    - 202
-  - - 2
-    - 152
-  lines:
-  - id: L1
-    p1:
-    - 6
-    - 171
-    p2:
-    - 300
-    - 142
-    allowed_sign: 1
-  - id: L2
-    p1:
-    - 350
-    - 135
-    p2:
-    - 601
-    - 121
-    allowed_sign: -1
+    - 614
+  - - 169
+    - 414
+  - - 251
+    - 312
+  - - 309
+    - 232
+  - - 327
+    - 178
+  - - 341
+    - 102
+  lines: []
   handler:
   - wrong_way
   - no_uturn
   rules:
     wrong_way:
-      enable: true
+      enable: false
     no_uturn:
-      enable: true
+      enable: false
     no_entry_road:
+      enable: false
+    no_parking:
+      enable: false
+    red_light_running:
+      enable: false
+    stop_line_violation:
+      enable: false
+    speeding:
+      enable: true
+  homography:
+    src:
+    - - 342
+      - 103
+    - - 453
+      - 90
+    - - 417
+      - 713
+    - - 7
+      - 614
+    dst:
+    - - 0.0
+      - 0.0
+    - - 8.0
+      - 0.0
+    - - 8.0
+      - 30.0
+    - - 0.0
+      - 30.0
+    measured_at: '2026-09-16T15:43:07'
+  road_dir:
+  - -0.31622776601683794
+  - 0.9486832980505138
+  uturn_pairs: []
+- id: POLY_3
+  kind: directional
+  polygon:
+  - - 468
+    - 115
+  - - 532
+    - 102
+  - - 598
+    - 187
+  - - 660
+    - 279
+  - - 691
+    - 384
+  - - 721
+    - 508
+  - - 743
+    - 715
+  - - 514
+    - 718
+  - - 541
+    - 552
+  - - 554
+    - 378
+  - - 549
+    - 268
+  - - 523
+    - 202
+  - - 469
+    - 118
+  lines: []
+  handler:
+  - wrong_way
+  - no_uturn
+  rules:
+    wrong_way:
+      enable: false
+    no_uturn:
+      enable: false
+    no_entry_road:
+      enable: false
+    no_parking:
+      enable: false
+    red_light_running:
+      enable: false
+    stop_line_violation:
+      enable: false
+    speeding:
+      enable: true
+  homography:
+    src:
+    - - 470
+      - 117
+    - - 531
+      - 103
+    - - 742
+      - 712
+    - - 516
+      - 717
+    dst:
+    - - 0.0
+      - 0.0
+    - - 4.0
+      - 0.0
+    - - 4.0
+      - 30.0
+    - - 0.0
+      - 30.0
+    measured_at: '2026-09-16T15:44:23'
+  road_dir:
+  - 0.21283126069992253
+  - 0.977088969576917
+  uturn_pairs: []
+- id: POLY_4
+  kind: banned
+  polygon:
+  - - 311
+    - 228
+  - - 197
+    - 379
+  - - 4
+    - 612
+  - - 418
+    - 713
+  - - 493
+    - 430
+  - - 506
+    - 308
+  - - 490
+    - 205
+  - - 313
+    - 229
+  lines: []
+  handler:
+  - no_entry_road
+  banned_classes:
+  - 0
+  - 4
+  active_hours: []
+  dwell_s: 1.0
+  entry_lines: []
+  rules:
+    wrong_way:
+      enable: false
+    no_uturn:
+      enable: false
+    no_entry_road:
+      enable: true
+    no_parking:
       enable: false
     red_light_running:
       enable: false
@@ -69,33 +248,39 @@ polygons:
       enable: false
     speeding:
       enable: false
-  uturn_pairs:
-  - first: L1
-    second: L2
-  - first: L2
-    second: L1
-
-lines: []
+  uturn_pairs: []
+lines:
+- id: L1
+  p1:
+  - 168
+  - 415
+  p2:
+  - 492
+  - 430
+  allowed_sign: 1
+- id: L2
+  p1:
+  - 552
+  - 429
+  p2:
+  - 704
+  - 419
+  allowed_sign: 1
 uturn_pairs: []
-
 wrong_way:
   min_hits: 3
   min_reverse_frames: 5
   min_reverse_px: 60.0
   cooldown_s: 10.0
-
 no_uturn:
   min_hits: 3
   cooldown_s: 10.0
-
 no_entry_road:
   dwell_s: 2.0
   min_hits: 3
   cooldown_s: 10.0
-
 evidence:
   dir: evidence
   jpeg_quality: 90
   retention_days: 7
-
 signals: []

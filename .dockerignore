@@ -8,27 +8,31 @@ __pycache__/
 .git/
 .gitignore
 
-# Nang: tu tai/chia se rieng, khong bake (ngoai tru weights/best.pt cho edge)
-# (ignore theo noi dung thu muc de pattern !... co tac dung)
-weights/*
-!assets/best.pt
-*.pt
+# Model weights: chi giu cac weights can thiet cho edge runtime
 *.onnx
 *.engine
+*.pt
+!weights/best.pt
+!weights/best_15thg9.pt
+!assets/best.pt
+
+# Du lieu huan luyen va video nang
 runs/
 data_*/images/
 data_*/labels/
 datasets/
-assets/
+assets/*.mp4
+assets/*.avi
+assets/*.mov
+assets/*.mkv
 evidence/
 *.mp4
 *.avi
 *.mov
 *.mkv
 
-# Docs, dev-only & test
+# Docs va dev-only
 docs/
 tools/
 tests/
-s3_worker.py
 main.py

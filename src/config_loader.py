@@ -7,7 +7,7 @@ Schema:
   vua co `enable:` (mac dinh true).
 - Moi polygon co the `rules: {ten_rule: {enable:, ...override}}`._
 - `lines:` phang + `uturn_pairs:` global tu boc vao polygon implicit
-  `__GLOBAL__` (khop moi track) de config cu chay y nhu cu.
+  `__GLOBAL__` (khop moi track) de config cu chay y nhu cu.\
 - Ngoai moi polygon explicit = hop le (skip), khong chay rule.
 """
 from pathlib import Path
@@ -68,6 +68,7 @@ def normalize(cfg):
     if "red_light" in cfg:
         cfg.setdefault("red_light_running", {})
         cfg["red_light_running"] = {**cfg.pop("red_light"), **cfg["red_light_running"]}
+
     for p in cfg["polygons"]:
         # dich legacy `handler: [wrong_way, ...]` -> rules enable map
         if "handler" in p and "rules" not in p:
@@ -132,8 +133,6 @@ def normalize(cfg):
             p.setdefault("active_hours", [])
             p.setdefault("dwell_s", 2.0)
         if p.get("homography") is not None and p["id"] != IMPLICIT_ID:
-            # Hieu chuan toc do: co homography = opt-in. Build + validate
-            # ngay luc load (fail-fast), luu san ma tran de runtime dung.
             p["_H"], p["_H_error"], p["_road_dir"] = _build_polygon_H(cfg, p)
         wins = []
         for w in p.get("active_hours", []):
@@ -172,7 +171,8 @@ def _build_polygon_H(cfg, poly):
     max_err = float(poly.get("homography_max_err_m",
                              cfg.get("speeding", {}).get(
                                  "homography_max_err_m",
-                                 HOMOGRAPHY_MAX_ERR_M)))
+                                 HOMOGRAPHY_MAX_ERR_M)))\
+        if poly.get("homography_max_err_m") is not None else HOMOGRAPHY_MAX_ERR_M
     if err > max_err:
         raise ConfigError(
             f"{pid}: homography reproj error {err:.2f}m > {max_err:.2f}m, "
@@ -189,7 +189,7 @@ def validate(cfg):
             if k != "enable" and k not in RULE_REGISTRY[name].PARAMS:
                 raise ConfigError(
                     f"global '{name}': param la '{k}' "
-                    f"(hop le: {sorted(RULE_REGISTRY[name].PARAMS)})")
+                    f"(hop le: {sorted(RULE_REGISTRY[name].PARAMS)})\")")
     pids = [p.get("id") for p in cfg["polygons"]]
     if len(pids) != len(set(pids)):
         raise ConfigError("Trung id polygon")
@@ -220,7 +220,7 @@ def validate(cfg):
                 if k != "enable" and k not in RULE_REGISTRY[rname].PARAMS:
                     raise ConfigError(
                         f"{pid}: param la '{rname}.{k}' "
-                        f"(hop le: {sorted(RULE_REGISTRY[rname].PARAMS)})")
+                        f"(hop le: {sorted(RULE_REGISTRY[rname].PARAMS)})\")")
         r = {k: (v or {}).get("enable", True)
              for k, v in (p.get("rules") or {}).items() if k in RULES}
         ndir = [ln for ln in p.get("lines", [])
@@ -323,9 +323,15 @@ def resolve_plan(cfg):
                 plan.append({"polygon": p, "rule": rule,
                               "params": effective_params(cfg, p, rule),
                               "lines": [], "pairs": []})
+            elif rule == "no_parking":
+                if p["id"] == IMPLICIT_ID or not p.get("polygon"):
+                    continue
+                plan.append({"polygon": p, "rule": rule,
+                             "params": effective_params(cfg, p, rule),
+                             "lines": [], "pairs": []})
             elif rule == "speeding":
                 if p["id"] == IMPLICIT_ID or p.get("_H") is None:
-                    continue  # chua hieu chuan H -> khong chay
+                    continue
                 plan.append({"polygon": p, "rule": rule,
                              "params": effective_params(cfg, p, rule),
                              "lines": [], "pairs": []})
@@ -390,6 +396,18 @@ def entries_for(bc, plan, containing_fn, track=None):
             continue
         # Neu track dang co candidate active tren line cua entry nay, van tiep tuc theo doi
         if track is not None:
+            # Ho tro kiem tra ca tam xe (center) ngoai bottom_center cho bounding box
+            if getattr(track, "bbox", None) is not None:
+                bb = track.bbox
+                center = ((bb[0] + bb[2]) / 2.0, (bb[1] + bb[3]) / 2.0)
+                if containing_fn(center, p.get("polygon", [])):
+                    out.append(e)
+                    continue
+            # Neu track dang co phien dung/do trong polygon nay, van tiep tuc theo doi
+            pk = getattr(track, "parking", None)
+            if pk and p.get("id") in pk:
+                out.append(e)
+                continue
             rs = getattr(track, "red", None)
             if rs:
                 elids = {ln.get("id") for ln in e.get("lines", [])}

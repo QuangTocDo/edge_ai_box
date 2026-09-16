@@ -50,12 +50,21 @@ data_*/images/
 data_*/labels/
 datasets/
 assets/
-# ================= Runtime output =================
-# Anh minh chung vi pham sinh ra khi chay pipeline
+
+# ================= Runtime output & temp data =================
+# Anh minh chung vi pham sinh ra khi chay pipeline & heartbeat data
 evidence/
+data/
 out/
 vis_*.jpg
 capture_*.jpg
+
+# ================= Archives & compressed files =================
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
 
 # ================= Video =================
 # Video test nang, khong commit (xem bang link/stream)

@@ -353,7 +353,16 @@ def validate_polygons(cfg):
             if h not in KNOWN_HANDLERS:
                 warns.append(f"{p.get('id')}: handler la {h}")
         if p.get("kind") == "banned":
-            if not p.get("banned_classes"):
+            rules = p.get("rules") or {}
+            if "no_entry_road" in rules:
+                no_entry_on = rules["no_entry_road"].get("enable", True)
+            elif "handler" in p:
+                no_entry_on = "no_entry_road" in p["handler"]
+            else:
+                no_entry_on = True
+            if rules.get("no_parking", {}).get("enable", False):
+                no_entry_on = False
+            if no_entry_on and not p.get("banned_classes"):
                 warns.append(f"{p.get('id')}: chua co banned_classes")
             for w in p.get("active_hours", []):
                 try:
