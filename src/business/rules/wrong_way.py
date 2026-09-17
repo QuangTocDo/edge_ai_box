@@ -2,7 +2,7 @@
 
 Cat line nguoc allowed_dir + duy tri nguoc >= N frames (hoac X px).
 """
-from ..geometry import allowed_vec, crossing_sign, dot
+from ...utils.geometry import allowed_vec, crossing_sign, dot
 from .base import BaseRule, cooldown_ok
 
 

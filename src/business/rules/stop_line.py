@@ -4,7 +4,7 @@ Cung diem cat nhu red_light_running nhung xe DUNG LAI sau vach
 (toc do < nguong stop_speed_px, dung yen qua stop_dwell_s) -> STOP_LINE_VIOLATION.
 Xe tiep tuc di vao giao lo thuoc ve red_light_running (multi-event).
 """
-from ..geometry import point_in_polygon
+from ...utils.geometry import point_in_polygon
 from ._shared import crossed_stop_lines, light_at, red_state
 from .base import BaseRule, cooldown_ok
 

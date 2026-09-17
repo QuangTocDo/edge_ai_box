@@ -1,20 +1,10 @@
-"""Rule Engine: moi loi 1 module rieng (de debug/sua doc lap).
+"""LEGACY shim (P2 restructure): use src.business.rules instead.
 
-Import cu van chay:
-    from src.rules import WrongWayRule, NoUTurnRule, NoEntryRule
+Import cũ vẫn chạy:
+    from src.rules import WrongWayRule, ...
 """
-from .base import BaseRule, cooldown_ok
-from .no_entry_road import NoEntryRule
-from .no_parking import NoParkingRule
-from .no_uturn import NoUTurnRule
-from .red_light_running import RedLightRunningRule
-from .registry import (PLANNED_TYPES, RULE_REGISTRY, create, known_types)
-from .speeding import SpeedingRule
-from .stop_line import StopLineRule
-from .wrong_way import WrongWayRule
-
-__all__ = ["BaseRule", "WrongWayRule", "NoUTurnRule", "NoEntryRule",
-           "NoParkingRule",
-           "RedLightRunningRule", "StopLineRule", "SpeedingRule",
-           "RULE_REGISTRY", "PLANNED_TYPES", "cooldown_ok", "create",
-           "known_types"]
+from src.business.rules import (  # noqa: F401
+    PLANNED_TYPES, RULE_REGISTRY, BaseRule, NoEntryRule, NoParkingRule,
+    NoUTurnRule, RedLightRunningRule, SpeedingRule, StopLineRule,
+    WrongWayRule, cooldown_ok, create, known_types,
+)

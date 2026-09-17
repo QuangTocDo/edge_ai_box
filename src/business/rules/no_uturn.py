@@ -4,7 +4,7 @@ Sequence thuan, KHONG check thoi gian: cat line 1 dung chieu ->
 cat line 2 dung chieu (RL->LR hoac LR->RL tuy cau hinh pair)
 la bao vi pham. Xe chay nhanh cham 2 vach cach nhau <2s van ban.
 """
-from ..geometry import crossing_sign
+from ...utils.geometry import crossing_sign
 from .base import BaseRule, cooldown_ok
 
 

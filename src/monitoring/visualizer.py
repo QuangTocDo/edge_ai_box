@@ -1,0 +1,147 @@
+"""Module Visualizer: render bounding box, lines, polygons, tin hieu den va thong tin vi pham.
+
+Tach biet hoan toan khoi pipeline core giup headless chay nhe va de unit test.
+"""
+from typing import Any, Dict, List, Optional
+import cv2
+from ..utils.geometry import allowed_vec
+
+ARROW_LEN = 60
+COLORS = [
+    (0, 255, 0), (255, 0, 0), (0, 0, 255), (0, 255, 255),
+    (255, 0, 255), (255, 255, 0), (0, 128, 255), (128, 0, 255),
+]
+
+
+def cls_name(names, cls: int) -> str:
+    """Tra ve ten class tu danh sach names hoac dict."""
+    if names is None:
+        return f"class {cls}"
+    if isinstance(names, dict):
+        return names.get(cls, f"class {cls}")
+    return names[cls] if cls < len(names) else f"class {cls}"
+
+
+def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
+                 names=None, t_video=0.0, signals=None):
+    """Ve overlay toan dien len frame: den tin hieu, polygons, lines, tracks va HUD."""
+    # 1. Ve tin hieu den giao thong (neu co)
+    for sid, s in (signals.snapshot() if signals else {}).items():
+        x1, y1, x2, y2 = s["roi"]
+        col = {
+            "RED": (0, 0, 255),
+            "YELLOW": (0, 255, 255),
+            "FLASHING_YELLOW": (0, 215, 255),
+            "GREEN": (0, 255, 0),
+        }.get(s["state"], (128, 128, 128))
+        cv2.rectangle(img, (x1, y1), (x2, y2), col, 2)
+        cv2.putText(img, f"{sid}:{s['state']}", (x1, max(0, y1 - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+
+    # 2. Ve cac vung da giac (polygons)
+    for p in polygons:
+        pts = [(int(x), int(y)) for x, y in (p.get("polygon") or [])]
+        if len(pts) >= 3:
+            col = (0, 0, 255) if p.get("kind") == "banned" else (0, 255, 0)
+            for a, b in zip(pts, pts[1:] + pts[:1]):
+                cv2.line(img, a, b, col, 2)
+            cv2.putText(img, p["id"], pts[0],
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+
+    # 3. Ve cac vach ao (lines)
+    for ln in lines:
+        p1 = tuple(int(v) for v in ln["p1"])
+        p2 = tuple(int(v) for v in ln["p2"])
+        col = (255, 0, 0) if ln.get("role") == "divider" else (0, 255, 0)
+        cv2.line(img, p1, p2, col, 2)
+        if ln.get("role") != "divider":
+            mx, my = (p1[0] + p2[0]) // 2, (p1[1] + p2[1]) // 2
+            ax, ay = allowed_vec(ln["p1"], ln["p2"], ln.get("allowed_sign", 1))
+            cv2.arrowedLine(img, (mx, my),
+                            (int(mx + ax * ARROW_LEN), int(my + ay * ARROW_LEN)),
+                            (0, 255, 255), 2)
+        cv2.putText(img, ln["id"], (p1[0], p1[1] - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+
+    # 4. Ve cac xe dang track
+    for tid, st in tracks.items():
+        if st.bbox is None:
+            continue
+        x1, y1, x2, y2 = [int(v) for v in st.bbox]
+        cls = int(st.cls)
+        color = COLORS[cls % len(COLORS)]
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+        pts = [(int(x), int(y)) for x, y in st.pts]
+        for a, b in zip(pts[:-1], pts[1:]):
+            cv2.line(img, a, b, (255, 0, 255), 2)
+        bc = pts[-1]
+        cv2.circle(img, bc, 4, (0, 255, 255), -1)
+
+        label = f"id{tid} {cls_name(names, cls)} {st.conf:.2f}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        cv2.rectangle(img, (x1, y1 - th - 8), (x1 + tw + 4, y1), color, -1)
+        cv2.putText(img, label, (x1 + 2, y1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+
+        # Thoi gian luu tru trong vung (dwell no_entry_road)
+        for zid, zs in st.zones.items():
+            if not zs.get("inside"):
+                continue
+            dw = next((float(p.get("dwell_s", 0)) for p in polygons
+                       if p.get("id") == zid), 0.0)
+            ztxt = f"{zid} {t_video - zs['enter_t']:.1f}/{dw:.0f}s"
+            cv2.putText(img, ztxt, (bc[0] - 40, bc[1] + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+        # Thoi gian dung do (no_parking)
+        parking_st = getattr(st, "parking", {})
+        for pid, pz in parking_st.items():
+            if not pz or pz.get("fired"):
+                continue
+            pdw = t_video - pz["start_t"]
+            ptxt = f"PARK {pid} {pdw:.1f}s"
+            cv2.putText(img, ptxt, (bc[0] - 40, bc[1] + 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+
+        # Hien thi van toc neu co
+        spd = getattr(st, "speed", None)
+        if spd is not None and spd.get("hist"):
+            lim = float(spd.get("limit", 50.0))
+            stxt = f"{spd.get('smooth', 0.0):.0f} km/h"
+            scol = (0, 0, 255) if spd.get("smooth", 0.0) > lim else (255, 255, 255)
+            cv2.putText(img, stxt, (x1, y2 + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, scol, 2)
+
+    # 5. HUD thong tin tren goc trai (FPS, Frame, Thong ke vi pham)
+    y = 30
+    ev_txt = "  ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+    has_violations = sum(v for k, v in counts.items() if k != "skipped") > 0
+    for txt, col in [
+        (f"FPS: {fps:.1f}", (0, 255, 0)),
+        (f"frame {frame_idx} tracks {len(tracks)}", (0, 255, 0)),
+        (ev_txt, (0, 0, 255) if has_violations else (0, 255, 0)),
+    ]:
+        cv2.putText(img, txt, (10, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2)
+        y += 28
+
+    return img
+
+
+class Visualizer:
+    """Lop Visualizer dong goi tien loi cho pipeline va de dang mock khi test."""
+
+    def __init__(self, lines: Optional[List[Dict[str, Any]]] = None,
+                 polygons: Optional[List[Dict[str, Any]]] = None,
+                 names: Optional[Any] = None):
+        self.lines = list(lines or [])
+        self.polygons = list(polygons or [])
+        self.names = names
+
+    def render(self, img, tracks, fps: float = 0.0, counts: Optional[Dict[str, int]] = None,
+               frame_idx: int = 0, t_video: float = 0.0, signals: Optional[Any] = None):
+        return draw_overlay(
+            img, tracks, self.lines, self.polygons, fps, counts or {},
+            frame_idx, names=self.names, t_video=t_video, signals=signals
+        )

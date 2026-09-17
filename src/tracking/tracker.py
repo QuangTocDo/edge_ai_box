@@ -5,9 +5,9 @@ import numpy as np
 
 from ultralytics import YOLO
 
-from .constants import (TRACK_MAX_AGE_FRAMES, TRACK_PTS_MAXLEN,
-                         TRACK_VEL_EMA_ALPHA)
-from .geometry import bottom_center
+from ..utils.constants import (TRACK_MAX_AGE_FRAMES, TRACK_PTS_MAXLEN,
+                                 TRACK_VEL_EMA_ALPHA)
+from ..utils.geometry import bottom_center
 
 
 class TrackState:

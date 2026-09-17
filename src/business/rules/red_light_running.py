@@ -17,7 +17,7 @@
   + Neu CO clearance polygon: Theo doi den khi xe tien vao clearance zone roi moi phat (mode 3 anh triptych).
 - Line co allow_right_on_red=true -> bo qua (re phai hop le khi den do).
 """
-from ..geometry import allowed_vec, dot, point_in_polygon
+from ...utils.geometry import allowed_vec, dot, point_in_polygon
 from ._shared import (crossed_stop_lines, is_before_stop_line, light_at,
                       near_stop_line, red_state, stash_pre_frame)
 from .base import BaseRule, cooldown_ok

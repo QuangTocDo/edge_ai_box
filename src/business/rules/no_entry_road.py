@@ -6,7 +6,7 @@
 - O lien tuc >= dwell_s -> bao 1 lan/dot hien dien. Ra ngoai -> reset.
 - t: giay video (frame_idx/fps). wall_min: phut hien tai theo gio edge.
 """
-from ..geometry import in_active_hours, parse_window, point_in_polygon
+from ...utils.geometry import in_active_hours, parse_window, point_in_polygon
 from .base import BaseRule, cooldown_ok
 
 

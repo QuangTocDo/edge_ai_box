@@ -10,7 +10,7 @@
   theo doi xe khac neu den do sau do.
 - Xuat bo 2 anh Diptych (1 luc bat dau dung, 2 luc dung qua han).
 """
-from ..geometry import in_active_hours, parse_window, point_in_polygon
+from ...utils.geometry import in_active_hours, parse_window, point_in_polygon
 from .base import BaseRule, cooldown_ok
 
 
