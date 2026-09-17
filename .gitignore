@@ -16,12 +16,20 @@ Thumbs.db
 opencode.json
 
 # ================= Tests =================
+# tests/ local only (không đẩy remote)
 tests/
 test/
 
 # ================= Docs / Markdown =================
-*.md
-docs/
+# Track docs + README
+# *.md
+# docs/
+# Ignore other noisy markdown only if needed:
+# *.log
+
+# ================= Local runtime configs =================
+# Bản active của máy local (copy từ camera_config.yaml), không commit
+configs/active.yaml
 
 # ================= Images =================
 *.jpg
@@ -40,6 +48,8 @@ docs/
 *.tflite
 !weights/
 !weights/**
+# best.pt 15MB: local only, không đẩy remote (dùng best_15thg9.pt đã track)
+weights/best.pt
 runs/
 *.log
 

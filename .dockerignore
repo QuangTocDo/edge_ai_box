@@ -14,7 +14,8 @@ __pycache__/
 *.pt
 !weights/best.pt
 !weights/best_15thg9.pt
-!assets/best.pt
+!weights/best_15thg9.onnx
+!models/**
 
 # Du lieu huan luyen va video nang
 runs/
