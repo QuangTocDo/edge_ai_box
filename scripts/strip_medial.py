@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.line_config import (find_line_any, get_polygons, iter_all_lines,
+from src.config.zones import (find_line_any, get_polygons, iter_all_lines,
                              load_config, role_of, save_config)  # noqa: E402
 
 

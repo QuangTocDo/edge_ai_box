@@ -1,7 +1,6 @@
 """Rule Engine: moi loi 1 module rieng (de debug/sua doc lap).
 
-Import cu van chay:
-    from src.rules import WrongWayRule, NoUTurnRule, NoEntryRule
+    from src.business.rules import WrongWayRule, NoUTurnRule, NoEntryRule
 """
 from .base import BaseRule, cooldown_ok
 from .no_entry_road import NoEntryRule

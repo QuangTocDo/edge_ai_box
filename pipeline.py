@@ -15,17 +15,17 @@ from pathlib import Path
 import cv2
 import yaml
 
-from src.capture import (AsyncStreamReader, _is_stream, _mask_source,
-                         _open_capture)
-from src.config_loader import ConfigError, load_camera_config
-from src.geometry import now_minutes
-from src.infer import create_tracker
-from src.line_config import iter_all_lines
-from src.runner import (FrameContext, build_runners, run_first_event,
-                        wanted_entries)
-from src.signals import SignalStore
-from src.sinks import AsyncEvidenceSaver, maybe_prune
-from src.visualizer import Visualizer
+from src.camera.capture import (AsyncStreamReader, _is_stream, _mask_source,
+                                 _open_capture)
+from src.config.loader import ConfigError, load_camera_config
+from src.utils.geometry import now_minutes
+from src.inference.detector import create_tracker
+from src.config.zones import iter_all_lines
+from src.pipeline.runner import (FrameContext, build_runners, run_first_event,
+                                wanted_entries)
+from src.inference.signals import SignalStore
+from src.storage.sinks import AsyncEvidenceSaver, maybe_prune
+from src.monitoring.visualizer import Visualizer
 
 STOP = {"flag": False}  # SIGINT/SIGTERM -> dung loop, cleanup sach se
 

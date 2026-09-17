@@ -25,14 +25,14 @@ from pathlib import Path
 import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.draw_state import DrawState, mode_label, resolve_enter_action  # noqa: E402
-from src.draw_menu import (allowed_tools, default_rules, get_mode, menu_text,
+from src.calibration.draw_state import DrawState, mode_label, resolve_enter_action  # noqa: E402
+from src.calibration.draw_menu import (allowed_tools, default_rules, get_mode, menu_text,
                            rules_off, subkey_tool, tools_help,
                            validate_tool)  # noqa: E402
-from src.geometry import (allowed_vec, line_near_or_in_polygon,
+from src.utils.geometry import (allowed_vec, line_near_or_in_polygon,
                           point_in_polygon)  # noqa: E402
-from src.homography import build_H  # noqa: E402
-from src.line_config import (add_polygon, delete_line, delete_polygon,
+from src.utils.homography import build_H  # noqa: E402
+from src.config.zones import (add_polygon, delete_line, delete_polygon,
                              delete_signal, finalize_zone, find_polygon,
                              flip_line, get_polygons, iter_all_lines,
                              load_config, role_of, save_config, validate,
@@ -430,7 +430,7 @@ def main():
                     except (ValueError, IndexError):
                         print("    Sai format, vd: 0 0")
             try:
-                from src.homography import build_H
+                from src.utils.homography import build_H
                 H, inl, err = build_H(
                     [[x, y] for x, y in pts], dst)
             except ValueError as e:
