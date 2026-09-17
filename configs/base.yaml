@@ -5,7 +5,7 @@ camera_id: CAM_DEFAULT
 config_version: cfg_base
 timezone: Asia/Ho_Chi_Minh
 model:
-  weights: weights/best.pt
+  weights: weights/best_15thg9.pt
   conf: 0.4
   imgsz: 640
   # Data custom data_v1 (best.pt): 0=motorbike_day, 1=car_day, 2=bus_day,

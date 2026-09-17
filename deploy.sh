@@ -51,11 +51,15 @@ cmd_start() {
     cam_name="$(_extract_cam_name "$target")"
     local container_name="traffic-${cam_name}"
 
-    # Resolve duong dan config
+    # Resolve duong dan config (uu tien cameras/ moi, fallback root configs/ legacy)
     local config_file="$target"
     if [ ! -f "$config_file" ]; then
-        if [ -f "configs/${target}.yaml" ]; then
+        if [ -f "configs/cameras/${target}.yaml" ]; then
+            config_file="configs/cameras/${target}.yaml"
+        elif [ -f "configs/${target}.yaml" ]; then
             config_file="configs/${target}.yaml"
+        elif [ -f "configs/cameras/cam_${target}.yaml" ]; then
+            config_file="configs/cameras/cam_${target}.yaml"
         elif [ -f "configs/cam_${target}.yaml" ]; then
             config_file="configs/cam_${target}.yaml"
         fi
@@ -83,6 +87,8 @@ cmd_start() {
         -d
         --name "$container_name"
         --restart unless-stopped
+        --log-opt max-size=20m
+        --log-opt max-file=3
         -v "$SCRIPT_DIR/configs:/app/configs:ro"
         -v "$SCRIPT_DIR/assets:/app/assets:ro"
         -v "$SCRIPT_DIR/evidence:/app/evidence"
@@ -100,9 +106,9 @@ cmd_start() {
 }
 
 cmd_start_all() {
-    echo "==> [START-ALL] Quét tất cả file config trong thư mục configs/ ..."
+    echo "==> [START-ALL] Quét tất cả file config trong thư mục configs/cameras/ + configs/ ..."
     local found=0
-    for cfg in configs/cam_*.yaml configs/cam*.yaml; do
+    for cfg in configs/cameras/cam_*.yaml configs/cameras/cam*.yaml configs/cam_*.yaml configs/cam*.yaml; do
         [ -e "$cfg" ] || continue
         # Bo qua file test tam thoi neu can
         if [[ "$cfg" == *"test"* ]]; then

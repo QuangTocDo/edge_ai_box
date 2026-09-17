@@ -43,9 +43,9 @@ COPY src/ ./src/
 COPY configs/ ./configs/
 COPY camera_config.yaml ./
 
-# Model weights: dam bao ca weights/best.pt va weights/best_15thg9.pt deu san sang trong image
+# Model weights: best_15thg9.pt/.onnx có sẵn trong image
+# (weights/best.pt là local-only, không COPY — mọi config đã trỏ best_15thg9.pt)
 COPY weights/ ./weights/
-COPY assets/best.pt ./weights/best.pt
 
 RUN chmod +x /app/entrypoint.sh \
     && mkdir -p /app/data /app/evidence \

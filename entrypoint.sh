@@ -6,7 +6,7 @@ umask 000
 mkdir -p /app/data /app/evidence
 
 # Neu command truyen vao la mot chuong trinh khac (bash, sh, pytest, s3_worker, etc.)
-if [ "$#" -gt 0 ] && [ "$1" != "pipeline.py" ] && [[ "$1" != --* ]] && [[ "$1" != *.yaml ]] && [[ "$1" != *.yml ]] && [ ! -f "configs/$1.yaml" ] && [ ! -f "configs/cam_$1.yaml" ] && [ ! -f "/app/configs/$1.yaml" ] && [ ! -f "/app/configs/cam_$1.yaml" ]; then
+if [ "$#" -gt 0 ] && [ "$1" != "pipeline.py" ] && [[ "$1" != --* ]] && [[ "$1" != *.yaml ]] && [[ "$1" != *.yml ]] && [ ! -f "configs/$1.yaml" ] && [ ! -f "configs/cam_$1.yaml" ] && [ ! -f "configs/cameras/$1.yaml" ] && [ ! -f "configs/cameras/cam_$1.yaml" ] && [ ! -f "/app/configs/$1.yaml" ] && [ ! -f "/app/configs/cam_$1.yaml" ] && [ ! -f "/app/configs/cameras/$1.yaml" ] && [ ! -f "/app/configs/cameras/cam_$1.yaml" ]; then
     if command -v "$1" >/dev/null 2>&1; then
         exec "$@"
     fi
@@ -32,11 +32,19 @@ if [ "$#" -gt 0 ]; then
     if [[ "$ARG1" == *.yaml ]] || [[ "$ARG1" == *.yml ]]; then
         CONFIG_POS="$ARG1"
         shift
-    elif [ -f "configs/${ARG1}.yaml" ] || [ -f "/app/configs/${ARG1}.yaml" ]; then
-        CONFIG_POS="configs/${ARG1}.yaml"
+    elif [ -f "configs/${ARG1}.yaml" ] || [ -f "/app/configs/${ARG1}.yaml" ] || [ -f "configs/cameras/${ARG1}.yaml" ] || [ -f "/app/configs/cameras/${ARG1}.yaml" ]; then
+        if [ -f "configs/cameras/${ARG1}.yaml" ] || [ -f "/app/configs/cameras/${ARG1}.yaml" ]; then
+            CONFIG_POS="configs/cameras/${ARG1}.yaml"
+        else
+            CONFIG_POS="configs/${ARG1}.yaml"
+        fi
         shift
-    elif [ -f "configs/cam_${ARG1}.yaml" ] || [ -f "/app/configs/cam_${ARG1}.yaml" ]; then
-        CONFIG_POS="configs/cam_${ARG1}.yaml"
+    elif [ -f "configs/cam_${ARG1}.yaml" ] || [ -f "/app/configs/cam_${ARG1}.yaml" ] || [ -f "configs/cameras/cam_${ARG1}.yaml" ] || [ -f "/app/configs/cameras/cam_${ARG1}.yaml" ]; then
+        if [ -f "configs/cameras/cam_${ARG1}.yaml" ] || [ -f "/app/configs/cameras/cam_${ARG1}.yaml" ]; then
+            CONFIG_POS="configs/cameras/cam_${ARG1}.yaml"
+        else
+            CONFIG_POS="configs/cam_${ARG1}.yaml"
+        fi
         shift
     elif [[ "$ARG1" != --* ]]; then
         if [[ "$ARG1" == cam* ]] || [[ "$ARG1" == CAM* ]]; then
@@ -57,28 +65,39 @@ fi
 # Uu tien bien CONFIG tren thiet bi bien (Edge Box):
 # 1. Tham so vi tri ($1)
 # 2. Bien moi truong CONFIG_FILE / CONFIG_PATH
-# 3. camera_config.yaml (file chuan tai con bien)
-# 4. config.yaml
-# 5. Theo CAMERA_ID (configs/${CAMERA_ID}.yaml)
-# 6. Fallback configs/cam_01.yaml
+# 3. camera_config.yaml (legacy shim tai root, giu tuong thich)
+# 4. configs/active.yaml (vi tri moi chuan sau P1)
+# 5. config.yaml
+# 6. Theo CAMERA_ID (configs/cameras/${CAMERA_ID}.yaml -> configs/${CAMERA_ID}.yaml)
+# 7. Fallback configs/cameras/cam_01.yaml -> configs/cam_01.yaml
 CONFIG="${CONFIG_POS:-${CONFIG_FILE:-${CONFIG_PATH:-}}}"
 if [ -z "$CONFIG" ]; then
     if [ -f "camera_config.yaml" ] || [ -f "/app/camera_config.yaml" ]; then
         CONFIG="camera_config.yaml"
+    elif [ -f "configs/active.yaml" ] || [ -f "/app/configs/active.yaml" ]; then
+        CONFIG="configs/active.yaml"
     elif [ -f "config.yaml" ] || [ -f "/app/config.yaml" ]; then
         CONFIG="config.yaml"
     else
         CID="${CAMERA_ID:-${CAMERA:-}}"
         if [ -n "$CID" ]; then
-            if [ -f "configs/${CID}.yaml" ] || [ -f "/app/configs/${CID}.yaml" ]; then
+            if [ -f "configs/cameras/${CID}.yaml" ] || [ -f "/app/configs/cameras/${CID}.yaml" ]; then
+                CONFIG="configs/cameras/${CID}.yaml"
+            elif [ -f "configs/${CID}.yaml" ] || [ -f "/app/configs/${CID}.yaml" ]; then
                 CONFIG="configs/${CID}.yaml"
+            elif [ -f "configs/cameras/cam_${CID}.yaml" ] || [ -f "/app/configs/cameras/cam_${CID}.yaml" ]; then
+                CONFIG="configs/cameras/cam_${CID}.yaml"
             elif [ -f "configs/cam_${CID}.yaml" ] || [ -f "/app/configs/cam_${CID}.yaml" ]; then
                 CONFIG="configs/cam_${CID}.yaml"
             else
-                CONFIG="configs/${CID}.yaml"
+                CONFIG="configs/cameras/${CID}.yaml"
             fi
         else
-            CONFIG="configs/cam_01.yaml"
+            if [ -f "configs/cameras/cam_01.yaml" ] || [ -f "/app/configs/cameras/cam_01.yaml" ]; then
+                CONFIG="configs/cameras/cam_01.yaml"
+            else
+                CONFIG="configs/cam_01.yaml"
+            fi
         fi
     fi
 fi
