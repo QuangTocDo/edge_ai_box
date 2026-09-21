@@ -65,17 +65,17 @@ fi
 # Uu tien bien CONFIG tren thiet bi bien (Edge Box):
 # 1. Tham so vi tri ($1)
 # 2. Bien moi truong CONFIG_FILE / CONFIG_PATH
-# 3. camera_config.yaml (legacy shim tai root, giu tuong thich)
-# 4. configs/active.yaml (vi tri moi chuan sau P1)
+# 3. configs/active.yaml (canonical: draw luu vao day, pipeline doc tu day)
+# 4. camera_config.yaml (legacy fallback tai root)
 # 5. config.yaml
 # 6. Theo CAMERA_ID (configs/cameras/${CAMERA_ID}.yaml -> configs/${CAMERA_ID}.yaml)
 # 7. Fallback configs/cameras/cam_01.yaml -> configs/cam_01.yaml
 CONFIG="${CONFIG_POS:-${CONFIG_FILE:-${CONFIG_PATH:-}}}"
 if [ -z "$CONFIG" ]; then
-    if [ -f "camera_config.yaml" ] || [ -f "/app/camera_config.yaml" ]; then
-        CONFIG="camera_config.yaml"
-    elif [ -f "configs/active.yaml" ] || [ -f "/app/configs/active.yaml" ]; then
+    if [ -f "configs/active.yaml" ] || [ -f "/app/configs/active.yaml" ]; then
         CONFIG="configs/active.yaml"
+    elif [ -f "camera_config.yaml" ] || [ -f "/app/camera_config.yaml" ]; then
+        CONFIG="camera_config.yaml"
     elif [ -f "config.yaml" ] || [ -f "/app/config.yaml" ]; then
         CONFIG="config.yaml"
     else

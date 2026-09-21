@@ -1,14 +1,16 @@
 # Standalone Edge Device: moi thiet bi bien chay 1 camera doc lap.
 #
 # Trien khai nhanh nhat tai tung con bien:
-#   1. Dat file cau hinh camera tai ./camera_config.yaml (hoac khai bao qua .env)
+#   1. Dat file cau hinh camera tai ./configs/active.yaml
+#      (ve bang tools/draw_lines.py -> luu vao active.yaml; pipeline doc tu day)
+#      hoac khai bao qua .env (CONFIG_FILE)
 #   2. Khoi chay don gian chi voi file config:
 #        docker compose up -d
 #      Hoac build lai neu co code moi:
 #        docker compose up --build
 #      Hoac dung docker run:
 #        docker run -d --name traffic-edge --restart always --network host \
-#          -v ./camera_config.yaml:/app/camera_config.yaml:ro \
+#          -v ./configs/active.yaml:/app/camera_config.yaml:ro \
 #          -v ./evidence:/app/evidence \
 #          -v ./data:/app/data \
 #          -v ./assets:/app/assets:ro \
@@ -38,10 +40,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Ma nguon, cong cu & cau hinh dung chung
+# (configs/active.yaml la canonical: COPY configs/ da gom; khong COPY
+# camera_config.yaml root legacy de tranh nham trong image)
 COPY pipeline.py entrypoint.sh s3_worker.py ./
 COPY src/ ./src/
 COPY configs/ ./configs/
-COPY camera_config.yaml ./
 
 # Model weights: best_15thg9.pt/.onnx có sẵn trong image
 # (weights/best.pt là local-only, không COPY — mọi config đã trỏ best_15thg9.pt)
@@ -54,7 +57,7 @@ RUN chmod +x /app/entrypoint.sh \
 # Thu muc runtime persistent (mount ra host khi trien khai thuc te)
 VOLUME ["/app/evidence", "/app/data"]
 
-# Bien moi truong mac dinh cho tung camera container (tat ca deu co fallback doc tu camera_config.yaml)
+# Bien moi truong mac dinh cho tung camera container (tat ca deu co fallback doc tu configs/active.yaml)
 ENV CAMERA_ID="" \
     CONFIG_FILE="" \
     CAM_SOURCE="" \

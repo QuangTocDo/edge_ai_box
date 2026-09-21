@@ -23,6 +23,7 @@ from src.inference.detector import create_tracker
 from src.config.zones import iter_all_lines
 from src.pipeline.runner import (FrameContext, build_runners, run_first_event,
                                 wanted_entries)
+from src.storage.object_store import ObjectStore
 from src.inference.signals import SignalStore
 from src.storage.sinks import AsyncEvidenceSaver, maybe_prune
 from src.monitoring.visualizer import Visualizer
@@ -85,12 +86,23 @@ def _touch_heartbeat(path):
         pass
 
 
+def _today_str(tzname="Asia/Ho_Chi_Minh"):
+    """Ngay YYYY-MM-DD theo timezone camera (object store partition)."""
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        return datetime.now(ZoneInfo(tzname)).strftime("%Y-%m-%d")
+    except Exception:
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default=None,
                     help="uu tien nhat; mac dinh lay tu file camera (source:), "
                          "cuoi cung la assets/video.mp4")
-    ap.add_argument("--config", default="camera_config.yaml")
+    ap.add_argument("--config", default="configs/active.yaml")
     ap.add_argument("--no-show", action="store_true")
     ap.add_argument("--save", default="")
     ap.add_argument("--max-frames", type=int, default=0)
@@ -159,6 +171,17 @@ def main():
     all_lines = list(iter_all_lines(cfg))
     vis_renderer = Visualizer(lines=all_lines, polygons=polys, names=tracker.names)
     evidence_saver = AsyncEvidenceSaver()
+    # Object store truy van nhanh: 1 record/track (G1/G2/G3), khong chan loop
+    # Tat bang OBJECT_STORE=0 khi can FPS toi da (vd edge yeu)
+    try:
+        if os.environ.get("OBJECT_STORE", "1") == "1":
+            obj_store = ObjectStore()
+            obj_store.prune()
+        else:
+            obj_store = None
+    except Exception:
+        logging.exception("object store khoi tao loi (chay tiep khong store)")
+        obj_store = None
 
     if isinstance(src, str) and src.startswith("/dev/video"):
         try:
@@ -194,9 +217,12 @@ def main():
     counts = {"skipped": 0}
     frame_idx, prev_t, start_t = 0, time.perf_counter(), time.perf_counter()
     fps = 0.0
+    t = 0.0
     wall_min = now_minutes(tz)
+    date_str = _today_str(tz)
     plan_entries = [e for e, _ in runners]
     rule_of = {id(e): r for e, r in runners}
+    prev_tids = set()
     _touch_heartbeat(heartbeat)
     last_prune = start_t
     ev_dir = str(ev.get("dir", "evidence"))
@@ -215,6 +241,7 @@ def main():
             t = frame_idx / fps_src
             if frame_idx % int(fps_src) == 1:
                 wall_min = now_minutes(tz)
+                date_str = _today_str(tz)
                 _touch_heartbeat(heartbeat)
 
             try:
@@ -249,6 +276,23 @@ def main():
                     last_prune = maybe_prune(ev_dir, camera_id,
                                              retention_days, last_prune,
                                              time.perf_counter())
+
+            # Object store truy van nhanh (G1/G2/G3): khong bao gio chan loop
+            if obj_store is not None:
+                try:
+                    cur_tids = set()
+                    for tid, st in tracks.items():
+                        cur_tids.add(tid)
+                        obj_store.observe(
+                            tid, st.cls, st.conf, st.bbox, frame,
+                            camera_id, date_str, t)
+                    for gone in prev_tids - cur_tids:
+                        obj_store.finalize(gone, camera_id, date_str, t)
+                    prev_tids = cur_tids
+                    obj_store.flush()
+                except Exception:
+                    logging.exception("object store loi frame %d (bo qua)",
+                                      frame_idx)
 
             if args.debug_rules and frame_idx % 30 == 1:
                 for st in tracks.values():
@@ -294,6 +338,14 @@ def main():
     finally:
         # Graceful shutdown: luu not toan bo evidence con ton dong truoc khi thoat
         evidence_saver.stop(timeout=5.0)
+        if obj_store is not None:
+            try:
+                for gone in prev_tids:
+                    obj_store.finalize(gone, camera_id, date_str, t)
+                obj_store.flush(force=True)
+                obj_store.close()
+            except Exception:
+                pass
         try:
             cap.release()
         except Exception:

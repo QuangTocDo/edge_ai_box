@@ -1,5 +1,5 @@
-"""Tool ve/quan ly virtual lines + polygons, ghi vao camera_config.yaml.
-Chay: python tools/draw_lines.py assets/video.mp4 [--config camera_config.yaml]
+"""Tool ve/quan ly virtual lines + polygons, ghi vao configs/active.yaml.
+Chay: python tools/draw_lines.py assets/video.mp4 [--config configs/active.yaml]
 
 Chon loi truoc (bat buoc de ve moi):
   1=wrong_way (chi ve line) | 2=no_uturn (polygon+line+pair)
@@ -152,7 +152,7 @@ def handle_action(kind, payload, st):
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else "assets/video1.mp4"
     cfg_path = Path(sys.argv[sys.argv.index("--config") + 1]) \
-        if "--config" in sys.argv else Path("camera_config.yaml")
+        if "--config" in sys.argv else Path("configs/active.yaml")
     cfg_path = cfg_path.resolve()
     is_new = not cfg_path.exists()
     cfg = load_config(cfg_path)
@@ -164,7 +164,7 @@ def main():
     if is_new:
         print(f"CANH BAO: file {cfg_path} chua ton tai -> dang mo config TRANG. "
               f"Neu muon sua hinh cu, chay lai voi --config <file cu> "
-              f"(vd --config camera_config.yaml). Nhan s se tao file moi.")
+              f"(vd --config configs/active.yaml). Nhan s se tao file moi.")
 
     cap = cv2.VideoCapture(src if not str(src).isdigit() else int(src))
     ok, frame = cap.read()
@@ -808,6 +808,12 @@ def main():
             msg = _link_signal()
             print(msg)
         elif key == ord("s"):
+            cfg["source"] = str(src)
+            if str(src).lower().endswith(
+                    (".jpg", ".jpeg", ".png", ".bmp", ".webp")):
+                print("CANH BAO: source la anh tinh — pipeline doc anh "
+                      "se dung sau 1 frame. Muon chay video/RTSP thi sua "
+                      "field 'source:' trong YAML.")
             warns = validate(cfg) + validate_polygons(cfg)
             save_config(cfg, cfg_path)
             back = load_config(cfg_path)

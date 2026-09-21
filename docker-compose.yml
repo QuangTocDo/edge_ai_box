@@ -19,7 +19,7 @@ services:
     # network_mode host: giam toi da do tre RTSP va tranh packet loss tren Linux edge
     network_mode: host
     environment:
-      - CONFIG_FILE=${CONFIG_FILE:-./camera_config.yaml}
+      - CONFIG_FILE=${CONFIG_FILE:-./configs/active.yaml}
       - CAM_SOURCE=${CAM_SOURCE:-}
       - IP_CAMERA=${IP_CAMERA:-}
       - TK_CAMERA=${TK_CAMERA:-}
@@ -30,9 +30,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - YOLO_CONFIG_DIR=/tmp
     volumes:
-      # Mount file config rieng cua con bien nay (mac dinh camera_config.yaml)
+      # Mount file config rieng cua con bien nay (mac dinh configs/active.yaml,
+      # ve bang draw tool roi pipeline doc tu day)
       - type: bind
-        source: ${CONFIG_FILE:-./camera_config.yaml}
+        source: ${CONFIG_FILE:-./configs/active.yaml}
         target: /app/camera_config.yaml
         read_only: true
       - ./evidence:/app/evidence

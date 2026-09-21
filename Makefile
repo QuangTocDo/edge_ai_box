@@ -1,5 +1,5 @@
 IMAGE ?= traffic-edge
-CONFIG ?= camera_config.yaml
+CONFIG ?= configs/active.yaml
 CAM ?= cam_01
 
 .PHONY: build up down test bench health logs status s3-cleanup

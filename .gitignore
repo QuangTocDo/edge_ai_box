@@ -65,6 +65,10 @@ assets/
 # Anh minh chung vi pham sinh ra khi chay pipeline & heartbeat data
 evidence/
 data/
+objects/
+*.db
+*.db-wal
+*.db-shm
 out/
 vis_*.jpg
 capture_*.jpg
