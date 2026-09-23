@@ -78,7 +78,7 @@ def save_event(frame, event, lines, class_names, out_dir="evidence",
                camera_id="CAM_TEST_01", config_version="cfg_v1",
                model_version="best_v1", jpeg_quality=90,
                timezone_name="Asia/Ho_Chi_Minh", event_time=None,
-               retention_days=7):
+               **_kwargs):
     """Ve overlay len ban sao frame, luu jpg + json theo ngay. Tra ve (jpg, json)."""
     ts_local = _resolve_time(event_time, timezone_name)
     out, date_str = _event_paths(out_dir, camera_id, event["type"], ts_local)
@@ -136,6 +136,8 @@ def save_event(frame, event, lines, class_names, out_dir="evidence",
         "model_version": model_version,
         "line_id": event["line_id"],
         "extra": event.get("extra", {}),
+        "heading_deg": event.get("heading_deg"),
+        "compass": event.get("compass"),
         "crop_path": crop_path,
         "image_hash_sha256": digest,
     }
@@ -170,7 +172,7 @@ def save_triptych(frames, frame_now, event, lines, class_names,
                   out_dir="evidence", camera_id="CAM_TEST_01",
                   config_version="cfg_v1", model_version="best_v1",
                   jpeg_quality=90, timezone_name="Asia/Ho_Chi_Minh",
-                  event_time=None, retention_days=7):
+                  event_time=None, **_kwargs):
     """Ghep 2 anh (Diptych) hoac 3 anh (Triptych) + 1 json chung.
 
     frames: [shot1, shot2] hoac [shot1, shot2, shot3] (BGR ndarrays).

@@ -1,0 +1,10 @@
+version: cctv
+date: 2026-09-22
+# Khong co `path:` -> ultralytics tu lay thu muc chua file yaml nay
+# (data_cctv/) lam goc -> chay dung tren moi may, khong sua theo tung host.
+# Giong data_v1 + them id 8 = pedestrian (person tu cctv relabel 0->8).
+train: train/images
+val: valid/images
+test: test/images
+nc: 9
+names: ['motorbike_day', 'car_day', 'bus_day', 'truck_day', 'motorbike_night', 'car_night', 'bus_night', 'truck_night', 'pedestrian']

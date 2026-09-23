@@ -1,11 +1,11 @@
 camera_id: CAM_TEST_01
 config_version: cfg_v2
 timezone: Asia/Ho_Chi_Minh
-source: assets/uturn.mp4
+source: assets/speed1.mp4
 imgsz: 1280
 model:
-  weights: weights/best_15thg9.pt
-  conf: 0.7
+  weights: weights/best_15thg9.onnx
+  conf: 0.6
   imgsz: 1280
   classes:
   - 0
@@ -20,25 +20,28 @@ model:
   device: null
 polygons:
 - id: POLY_1
-  kind: banned
+  kind: directional
   polygon:
-  - - 278
-    - 87
-  - - 272
-    - 139
-  - - 331
-    - 141
-  - - 337
-    - 95
-  - - 279
-    - 84
+  - - 774
+    - 389
+  - - 908
+    - 389
+  - - 758
+    - 1003
+  - - 27
+    - 1003
+  - - 363
+    - 731
+  - - 535
+    - 586
+  - - 693
+    - 458
+  - - 774
+    - 390
   lines: []
   handler:
-  - no_entry_road
-  banned_classes: []
-  active_hours: []
-  dwell_s: 3.0
-  entry_lines: []
+  - wrong_way
+  - no_uturn
   rules:
     wrong_way:
       enable: false
@@ -47,49 +50,61 @@ polygons:
     no_entry_road:
       enable: false
     no_parking:
-      enable: true
+      enable: false
     red_light_running:
       enable: false
     stop_line_violation:
       enable: false
     speeding:
-      enable: false
-  uturn_pairs: []
+      enable: true
+  homography:
+    src:
+    - - 776
+      - 389
+    - - 906
+      - 390
+    - - 758
+      - 999
+    - - 31
+      - 1003
+    dst:
+    - - 0.0
+      - 0.0
+    - - 7.5
+      - 0.0
+    - - 7.5
+      - 30.0
+    - - 0.0
+      - 30.0
+    measured_at: '2026-09-17T15:29:51'
+  road_dir:
+  - -0.5682339311347404
+  - 0.8228670606526666
 - id: POLY_2
   kind: directional
   polygon:
-  - - 342
-    - 100
-  - - 452
-    - 90
-  - - 467
-    - 132
-  - - 480
-    - 173
-  - - 492
-    - 218
-  - - 507
-    - 287
-  - - 501
-    - 362
-  - - 475
-    - 507
-  - - 449
-    - 607
-  - - 418
-    - 715
-  - - 2
-    - 614
-  - - 169
-    - 414
-  - - 251
-    - 312
-  - - 309
-    - 232
-  - - 327
-    - 178
-  - - 341
-    - 102
+  - - 1074
+    - 1003
+  - - 1774
+    - 1003
+  - - 1546
+    - 801
+  - - 1346
+    - 623
+  - - 1207
+    - 497
+  - - 1103
+    - 406
+  - - 959
+    - 399
+  - - 988
+    - 549
+  - - 1020
+    - 702
+  - - 1047
+    - 856
+  - - 1076
+    - 1003
   lines: []
   handler:
   - wrong_way
@@ -111,161 +126,44 @@ polygons:
       enable: true
   homography:
     src:
-    - - 342
-      - 103
-    - - 453
-      - 90
-    - - 417
-      - 713
-    - - 7
-      - 614
+    - - 1078
+      - 1003
+    - - 1772
+      - 1003
+    - - 1104
+      - 408
+    - - 961
+      - 401
     dst:
     - - 0.0
       - 0.0
-    - - 8.0
+    - - 7.5
       - 0.0
-    - - 8.0
+    - - 7.5
       - 30.0
     - - 0.0
       - 30.0
-    measured_at: '2026-09-16T15:43:07'
+    measured_at: '2026-09-17T15:30:45'
   road_dir:
-  - -0.31622776601683794
-  - 0.9486832980505138
-  uturn_pairs: []
-- id: POLY_3
-  kind: directional
-  polygon:
-  - - 468
-    - 115
-  - - 532
-    - 102
-  - - 598
-    - 187
-  - - 660
-    - 279
-  - - 691
-    - 384
-  - - 721
-    - 508
-  - - 743
-    - 715
-  - - 514
-    - 718
-  - - 541
-    - 552
-  - - 554
-    - 378
-  - - 549
-    - 268
-  - - 523
-    - 202
-  - - 469
-    - 118
-  lines: []
-  handler:
-  - wrong_way
-  - no_uturn
-  rules:
-    wrong_way:
-      enable: false
-    no_uturn:
-      enable: false
-    no_entry_road:
-      enable: false
-    no_parking:
-      enable: false
-    red_light_running:
-      enable: false
-    stop_line_violation:
-      enable: false
-    speeding:
-      enable: true
-  homography:
-    src:
-    - - 470
-      - 117
-    - - 531
-      - 103
-    - - 742
-      - 712
-    - - 516
-      - 717
-    dst:
-    - - 0.0
-      - 0.0
-    - - 4.0
-      - 0.0
-    - - 4.0
-      - 30.0
-    - - 0.0
-      - 30.0
-    measured_at: '2026-09-16T15:44:23'
-  road_dir:
-  - 0.21283126069992253
-  - 0.977088969576917
-  uturn_pairs: []
-- id: POLY_4
-  kind: banned
-  polygon:
-  - - 311
-    - 228
-  - - 197
-    - 379
-  - - 4
-    - 612
-  - - 418
-    - 713
-  - - 493
-    - 430
-  - - 506
-    - 308
-  - - 490
-    - 205
-  - - 313
-    - 229
-  lines: []
-  handler:
-  - no_entry_road
-  banned_classes:
-  - 0
-  - 4
-  active_hours: []
-  dwell_s: 1.0
-  entry_lines: []
-  rules:
-    wrong_way:
-      enable: false
-    no_uturn:
-      enable: false
-    no_entry_road:
-      enable: true
-    no_parking:
-      enable: false
-    red_light_running:
-      enable: false
-    stop_line_violation:
-      enable: false
-    speeding:
-      enable: false
-  uturn_pairs: []
+  - -0.5582113676108285
+  - -0.8296987821312314
 lines:
 - id: L1
   p1:
-  - 168
-  - 415
+  - 539
+  - 581
   p2:
-  - 492
-  - 430
+  - 854
+  - 608
   allowed_sign: 1
 - id: L2
   p1:
-  - 552
-  - 429
+  - 1001
+  - 602
   p2:
-  - 704
-  - 419
-  allowed_sign: 1
+  - 1320
+  - 594
+  allowed_sign: -1
 uturn_pairs: []
 wrong_way:
   min_hits: 3

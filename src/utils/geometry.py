@@ -58,6 +58,28 @@ def dot(ax, ay, bx, by):
     return ax * bx + ay * by
 
 
+COMPASS8 = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+
+def heading_deg(dx, dy):
+    """Goc huong di chuyen (do) tu vector (dx, dy) pixel.
+
+    Quy uoc NOI BO (khong phai la ban): 0 = len tren anh, tang theo
+    chieu kim dong ho (90 = sang phai, 180 = xuong duoi, 270 = sang trai).
+    Tra ve None neu vector ~0 (dung yen -> khong co huong).
+    """
+    if math.hypot(dx, dy) < EPS:
+        return None
+    return (math.degrees(math.atan2(dx, -dy)) + 360.0) % 360.0
+
+
+def compass8(deg):
+    """0-360 do -> 1 trong 8 nhan N/NE/E/SE/S/SW/W/NW. None -> None."""
+    if deg is None:
+        return None
+    return COMPASS8[int((deg + 22.5) // 45) % 8]
+
+
 def dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
 

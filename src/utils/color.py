@@ -15,7 +15,7 @@ import numpy as np
 BASIC_COLORS_VN = ["do", "cam", "vang", "xanh la", "xanh duong",
                    "tim", "trang", "bac", "den"]
 
-MIN_SIDE_PX = 20
+MIN_SIDE_PX = 32  # crop nho hon thi histogram khong dang tin (vd 23px -> unknown)
 MIN_CONF = 0.5
 # Nguong V/S de loai nhieu (lop, gam, bong do, kinh phan chieu mo)
 DARK_V_THRESH = 40
@@ -44,13 +44,69 @@ def _to_hsv(bgr_img):
         return None
 
 
-def dominant_color(bgr_img, min_conf=MIN_CONF):
-    """Tra ve (color, confidence). color trong BASIC_COLORS_VN + 'unknown'."""
+# Bien do am sac cho phep truoc khi can thiep (tranh tay mau xe that)
+CAST_THRESH = 25.0
+# Kep gain de chi nhuộm nhe, khong bao gio lat hue (0.75~1.33)
+GAIN_LO, GAIN_HI = 0.75, 1.33
+
+
+def frame_gains(frame, p=6):
+    """Uoc luong gain can bang trang tu FULL FRAME (chu yeu nen duong xam).
+    Tra ve gains (3,) hoac None neu khong can thiet / khong tinh duoc.
+    KHONG bao gio goi tren crop xe (xe ap dao mau lam lech uoc luong)."""
+    if frame is None or getattr(frame, "size", 0) == 0:
+        return None
+    try:
+        h, w = frame.shape[:2]
+        small = frame
+        if max(h, w) > 320:
+            scale = 320.0 / max(h, w)
+            small = cv2.resize(frame, (int(w * scale), int(h * scale)))
+        img = small.reshape(-1, 3).astype(np.float64)
+        means = np.array([np.power(np.mean(np.power(img[:, c], p)), 1.0 / p)
+                          for c in range(3)])
+        means = np.maximum(means, 1e-6)
+        if abs(float(means[0]) - float(means[2])) <= CAST_THRESH:
+            return None
+        gray = float(means.mean())
+        gains = np.clip(gray / means, GAIN_LO, GAIN_HI)
+        if np.allclose(gains, 1.0, atol=0.05):
+            return None
+        return gains
+    except (ValueError, cv2.error):
+        return None
+
+
+def white_balance(bgr_img, gains=None, p=6):
+    """Can bang trang bang gains cho san (tu frame_gains) hoac tu uoc luong
+    noi bo khi thieu. Gain luon bi kep de khong lat hue."""
+    if bgr_img is None or bgr_img.size == 0:
+        return bgr_img
+    try:
+        if gains is None:
+            return bgr_img
+        gains = np.clip(np.asarray(gains, dtype=np.float64), GAIN_LO, GAIN_HI)
+        out = np.clip(bgr_img.astype(np.float64) * gains.reshape(1, 1, 3),
+                      0, 255).astype(np.uint8)
+        return out
+    except (ValueError, OverflowError):
+        return bgr_img
+
+
+def needs_white_balance(bgr_img):
+    """Giu de tuong thich nguoc (khong dung trong pipeline moi)."""
+    return False
+
+
+def dominant_color(bgr_img, min_conf=MIN_CONF, gains=None):
+    """Tra ve (color, confidence). color trong BASIC_COLORS_VN + 'unknown'.
+    gains: tu frame_gains(full_frame) - can bang truoc khi dem hue."""
     if bgr_img is None or bgr_img.size == 0:
         return "unknown", 0.0
     h, w = bgr_img.shape[:2]
     if h < MIN_SIDE_PX or w < MIN_SIDE_PX:
         return "unknown", 0.0
+    bgr_img = white_balance(bgr_img, gains)
     hsv = _to_hsv(bgr_img)
     if hsv is None:
         return "unknown", 0.0
@@ -159,14 +215,14 @@ def grabcut_foreground(bgr_img, iters=2):
         return None
 
 
-def dominant_color_robust(bgr_img, bbox=None):
-    """Pipeline day du: mau thuong -> neu yeu + bbox xeo thi GrabCut xac nhan.
-    Tra ve (color, confidence, method)."""
-    color, conf = dominant_color(bgr_img)
+def dominant_color_robust(bgr_img, bbox=None, gains=None):
+    """Pipeline day du: mau thuong (co gains tu full frame) -> neu yeu +
+    bbox xeo thi GrabCut xac nhan. Tra ve (color, confidence, method)."""
+    color, conf = dominant_color(bgr_img, gains=gains)
     if bbox is not None and needs_grabcut(bbox, color, conf):
         fg = grabcut_foreground(bgr_img)
         if fg is not None:
-            color2, conf2 = dominant_color(fg)
+            color2, conf2 = dominant_color(fg, gains=gains)
             if color2 != "unknown" and conf2 >= conf:
                 return color2, conf2, "grabcut"
     return color, conf, "hsv"

@@ -3,6 +3,7 @@
 Tach biet hoan toan khoi pipeline core giup headless chay nhe va de unit test.
 """
 from typing import Any, Dict, List, Optional
+import math
 import cv2
 from ..utils.geometry import allowed_vec
 
@@ -77,6 +78,14 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
             cv2.line(img, a, b, (255, 0, 255), 2)
         bc = pts[-1]
         cv2.circle(img, bc, 4, (0, 255, 255), -1)
+
+        # Mui ten huong di chuyen (chi khi track co heading = dang di chuyen)
+        heading = getattr(st, "heading", None)
+        if heading is not None:
+            rad = math.radians(heading)
+            tip = (int(bc[0] + math.sin(rad) * ARROW_LEN),
+                   int(bc[1] - math.cos(rad) * ARROW_LEN))
+            cv2.arrowedLine(img, bc, tip, color, 2, tipLength=0.3)
 
         label = f"id{tid} {cls_name(names, cls)} {st.conf:.2f}"
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)

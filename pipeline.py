@@ -26,6 +26,7 @@ from src.pipeline.runner import (FrameContext, build_runners, run_first_event,
 from src.storage.object_store import ObjectStore
 from src.inference.signals import SignalStore
 from src.storage.sinks import AsyncEvidenceSaver, maybe_prune
+from src.monitoring.health import touch_heartbeat
 from src.monitoring.visualizer import Visualizer
 
 STOP = {"flag": False}  # SIGINT/SIGTERM -> dung loop, cleanup sach se
@@ -76,14 +77,6 @@ def _resolve_camera_source(args_source, cfg_source):
 
 def _on_stop(signum, frame):
     STOP["flag"] = True
-
-
-def _touch_heartbeat(path):
-    try:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).touch()
-    except Exception:
-        pass
 
 
 def _today_str(tzname="Asia/Ho_Chi_Minh"):
@@ -173,15 +166,19 @@ def main():
     evidence_saver = AsyncEvidenceSaver()
     # Object store truy van nhanh: 1 record/track (G1/G2/G3), khong chan loop
     # Tat bang OBJECT_STORE=0 khi can FPS toi da (vd edge yeu)
+    # run_id rieng moi lan chay de khong de record lan nhau
+    import uuid as _uuid
+    run_id = _uuid.uuid4().hex[:8]
     try:
         if os.environ.get("OBJECT_STORE", "1") == "1":
-            obj_store = ObjectStore()
+            obj_store = ObjectStore(run_id=run_id)
             obj_store.prune()
         else:
             obj_store = None
     except Exception:
         logging.exception("object store khoi tao loi (chay tiep khong store)")
         obj_store = None
+    logging.info("Object store run_id=%s", run_id)
 
     if isinstance(src, str) and src.startswith("/dev/video"):
         try:
@@ -223,7 +220,7 @@ def main():
     plan_entries = [e for e, _ in runners]
     rule_of = {id(e): r for e, r in runners}
     prev_tids = set()
-    _touch_heartbeat(heartbeat)
+    touch_heartbeat(heartbeat)
     last_prune = start_t
     ev_dir = str(ev.get("dir", "evidence"))
     retention_days = ev.get("retention_days", 7)
@@ -242,7 +239,7 @@ def main():
             if frame_idx % int(fps_src) == 1:
                 wall_min = now_minutes(tz)
                 date_str = _today_str(tz)
-                _touch_heartbeat(heartbeat)
+                touch_heartbeat(heartbeat)
 
             try:
                 tracks = tracker.update(frame, frame_idx)

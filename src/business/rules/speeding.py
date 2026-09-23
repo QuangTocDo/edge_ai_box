@@ -13,7 +13,6 @@ import cv2
 import numpy as np
 
 from ...utils.constants import EPS
-from ...utils.geometry import point_in_polygon
 from ...utils.homography import longitudinal_dist, pixel_to_road
 from .base import BaseRule, cooldown_ok
 

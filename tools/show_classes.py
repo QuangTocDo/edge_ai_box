@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data_v1"
+DATA = ROOT / "data_v2"
 OUT = ROOT / "assets/class_samples"
 COLORS = [
     (0, 255, 0), (255, 0, 0), (0, 0, 255), (0, 255, 255),

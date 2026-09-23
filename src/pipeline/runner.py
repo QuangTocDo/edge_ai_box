@@ -8,7 +8,7 @@ import numpy as np
 
 from ..business.rules import create as create_rule
 from ..config.loader import entries_for
-from ..utils.geometry import point_in_polygon
+from ..utils.geometry import compass8, point_in_polygon
 
 
 @dataclass
@@ -50,5 +50,9 @@ def run_first_event(track, wanted, rule_of, frame_idx=0, t=0.0, wall_min=None,
         e = rule.run(entry, track, frame_idx, t, wall_min,
                      frame=frame, signals=signals)
         if e:
+            hd = getattr(track, "heading", None)
+            if hd is not None:
+                e["heading_deg"] = round(hd, 1)
+                e["compass"] = compass8(hd)
             return e
     return None
