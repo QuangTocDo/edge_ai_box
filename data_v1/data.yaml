@@ -1,9 +1,0 @@
-version: v1
-date: 2026-09-08
-# Khong co `path:` -> ultralytics tu lay thu muc chua file yaml nay
-# (data_v1/) lam goc -> chay dung tren moi may, khong sua theo tung host.
-train: images/train
-val: images/val
-test: images/test
-nc: 8
-names: ['motorbike_day', 'car_day', 'bus_day', 'truck_day', 'motorbike_night', 'car_night', 'bus_night', 'truck_night']

@@ -86,3 +86,7 @@ capture_*.jpg
 *.avi
 *.mov
 *.mkv
+
+# dataset yaml rieng cua tung may, khong commit
+/data_cctv/data.yaml
+/data_v1/data.yaml
