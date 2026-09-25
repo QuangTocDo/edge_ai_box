@@ -9,6 +9,8 @@ from pathlib import Path
 
 import cv2
 
+from ..utils.vehicle import vehicle_name
+
 
 def _now_local(tzname="Asia/Ho_Chi_Minh"):
     """Datetime hien tai theo timezone camera. Fallback UTC+7 neu thieu tzdata."""
@@ -187,8 +189,7 @@ def save_event(frame, event, lines, class_names, out_dir="evidence",
     raw_cls = event.get("cls", 0)
     try:
         cls = int(raw_cls)
-        cname = class_names.get(cls, str(cls)) if isinstance(class_names, dict) \
-            else (class_names[cls] if cls < len(class_names) else str(cls))
+        cname = vehicle_name(cls, class_names)
     except (ValueError, TypeError):
         cls = -1
         cname = str(raw_cls)
@@ -246,8 +247,7 @@ def _annotate(img, event, lines, caption, ts_text, class_names,
     raw_cls = event.get("cls", 0)
     try:
         cls = int(raw_cls)
-        name = class_names.get(cls, str(cls)) if isinstance(class_names, dict) \
-            else (class_names[cls] if cls < len(class_names) else str(cls))
+        name = vehicle_name(cls, class_names)
     except (ValueError, TypeError):
         name = str(raw_cls)
 
@@ -346,8 +346,7 @@ def save_triptych(frames, frame_now, event, lines, class_names,
     raw_cls = event.get("cls", 0)
     try:
         cls = int(raw_cls)
-        cname = class_names.get(cls, str(cls)) if isinstance(class_names, dict) \
-            else (class_names[cls] if cls < len(class_names) else str(cls))
+        cname = vehicle_name(cls, class_names)
     except (ValueError, TypeError):
         cls = -1
         cname = str(raw_cls)

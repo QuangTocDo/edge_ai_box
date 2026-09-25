@@ -11,6 +11,7 @@ from ..utils.constants import (TRACK_JUMP_MIN_PX, TRACK_JUMP_PX_RATIO,
                                  TRACK_JUMP_STREAK, TRACK_MAX_AGE_FRAMES,
                                  TRACK_PTS_MAXLEN, TRACK_VEL_EMA_ALPHA)
 from ..utils.geometry import bottom_center, heading_deg
+from ..utils.vehicle import vehicle_name
 
 # Nguong toc do toi thieu (px/frame, theo vel EMA) de cap nhat heading.
 # Duoi nguong (dung yen/tre cham) giu heading cu, tranh nhay loan.
@@ -76,9 +77,18 @@ class TrackState:
 class Tracker:
     def __init__(self, weights="weights/best.pt", conf=0.4, imgsz=640,
                  classes=None, tracker_cfg="ocsort.yaml", device=None,
-                 max_age_frames=TRACK_MAX_AGE_FRAMES):
+                 max_age_frames=TRACK_MAX_AGE_FRAMES, names=None):
         self.model = YOLO(weights)
-        self.names = self.model.names
+        if names:
+            self.names = {int(k): str(v) for k, v in names.items()} if isinstance(names, dict) else names
+        else:
+            raw_names = getattr(self.model, "names", {})
+            if isinstance(raw_names, dict):
+                self.names = {cid: vehicle_name(cid, raw_names) for cid in raw_names}
+            elif isinstance(raw_names, (list, tuple)):
+                self.names = [vehicle_name(i, raw_names) for i in range(len(raw_names))]
+            else:
+                self.names = raw_names
         self.conf = conf
         self.imgsz = imgsz
         self.classes = classes

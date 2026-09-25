@@ -5,8 +5,8 @@ Model train 8 class ngay/dem (data_v1) + pedestrian (id 8):
   4=motorbike_night, 5=car_night, 6=bus_night, 7=truck_night,
   8=pedestrian.
 
-PHAM VI: chi hien thi (visualizer overlay). Khong phai co che VLM.
-Moi noi nhap/xu ly idx (rules, banned_classes, configs, evidence JSON)
+PHAM VI: chi hien thi (visualizer overlay / evidence UI).
+Moi noi nhap/xu ly idx (rules, banned_classes, configs)
 giu nguyen id goc.
 """
 VEHICLE_NAMES = {
@@ -23,11 +23,23 @@ VEHICLE_NAMES = {
 
 
 def vehicle_name(cls, raw_names=None):
-    """Ten xe gon cho UI. Id la -> fallback ten raw cua model / 'class {id}'."""
+    """Ten xe gon cho UI (gop day/night thanh 1). Id la -> fallback ten raw cua model / 'class {id}'."""
+    if raw_names is not None:
+        if isinstance(raw_names, dict):
+            raw = raw_names.get(cls)
+        elif isinstance(raw_names, (list, tuple)) and isinstance(cls, int) and 0 <= cls < len(raw_names):
+            raw = raw_names[cls]
+        else:
+            raw = None
+
+        if raw is not None:
+            raw_str = str(raw)
+            for suffix in ("_day", "_night", "-day", "-night"):
+                if raw_str.endswith(suffix):
+                    return raw_str[:-len(suffix)]
+            return raw_str
+
     if cls in VEHICLE_NAMES:
         return VEHICLE_NAMES[cls]
-    if raw_names is None:
-        return f"class {cls}"
-    if isinstance(raw_names, dict):
-        return raw_names.get(cls, f"class {cls}")
-    return raw_names[cls] if cls < len(raw_names) else f"class {cls}"
+
+    return f"class {cls}"

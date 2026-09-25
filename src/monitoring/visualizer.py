@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 import math
 import cv2
 from ..utils.geometry import allowed_vec
+from ..utils.vehicle import vehicle_name
 
 ARROW_LEN = 60
 COLORS = [
@@ -15,12 +16,19 @@ COLORS = [
 
 
 def cls_name(names, cls: int) -> str:
-    """Tra ve ten class tu danh sach names hoac dict."""
+    """Tra ve ten class tu danh sach names hoac dict (tu dong gop day/night)."""
     if names is None:
         return f"class {cls}"
     if isinstance(names, dict):
-        return names.get(cls, f"class {cls}")
-    return names[cls] if cls < len(names) else f"class {cls}"
+        raw = names.get(cls)
+    elif isinstance(names, (list, tuple)) and isinstance(cls, int) and 0 <= cls < len(names):
+        raw = names[cls]
+    else:
+        raw = None
+
+    if raw is None:
+        return f"class {cls}"
+    return vehicle_name(cls, {cls: raw})
 
 
 def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
@@ -169,7 +177,7 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
     y = 30
     ev_txt = "  ".join(f"{k} {v}" for k, v in sorted(counts.items()))
     has_violations = sum(v for k, v in counts.items() if k != "skipped") > 0
-    for txt, col in [
+    for txt, col in [\
         (f"FPS: {fps:.1f}", (0, 255, 0)),
         (f"frame {frame_idx} tracks {len(tracks)} peds {len(pedestrians or [])}", (0, 255, 0)),
         (ev_txt, (0, 0, 255) if has_violations else (0, 255, 0)),

@@ -14,7 +14,7 @@ if __name__ == "__main__":
 # from ultralytics import YOLO
 #
 # # Load a model
-# model = YOLO("weights/best_pedestrian.pt")  # load a custom-trained model
+# model = YOLO("weights/helmet.pt")  # load a custom-trained model
 #
 # # Export the model
 # model.export(format="onnx",dynamic=True, simplify=True)

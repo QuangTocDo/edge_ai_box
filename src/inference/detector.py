@@ -100,7 +100,8 @@ def create_tracker(mc, imgsz_override=0):
                    imgsz=imgsz_override or mc.get("imgsz", 640),
                    classes=mc.get("classes"),
                    tracker_cfg=mc.get("tracker", "ocsort.yaml"),
-                   device=mc.get("device"))
+                   device=mc.get("device"),
+                   names=mc.get("names"))
 
 
 class PedestrianDetector:

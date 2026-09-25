@@ -1,9 +1,0 @@
-# Cau hinh chay test pipeline (thay cho default cung trong code).
-# Chay: python pipeline.py --run-config configs/examples/test_config.yaml
-# Tham so truyen truc tiep tren CLI van uu tien hon file nay.
-source: assets/video1.mp4   # file video | 0 = webcam | URL rtsp/http
-config: no_way.yaml # cau hinh camera/lines/rules
-imgsz: 1920                 # 0 = lay tu camera_config; 480 = nhanh, 640 = chuan
-max_frames: 600            # 0 = chay het video
-no_show: true              # true = khong mo cua so (chay ngam do FPS)
-save: ""                   # duong dan .mp4 de luu video overlay, "" = khong luu
