@@ -1,6 +1,6 @@
 """Chay thu nghiem model ONNX tren video mp4 va do FPS.
-Chay: python tools/benchmark_onnx.py [video.mp4] [imgsz]
-      python tools/benchmark_onnx.py assets/red_light1.mp4 640
+Chay: python scripts/benchmark_onnx.py [video.mp4] [imgsz]
+      python scripts/benchmark_onnx.py assets/red_light1.mp4 640
 """
 import sys
 import time

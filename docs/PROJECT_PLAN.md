@@ -229,7 +229,7 @@ flowchart TD
     C -- Có --> VIO[VIOLATION no_uturn\nLưu ảnh + metadata]
 ```
 
-- **Pair 2 chân:** `{first, second}` cùng 1 polygon (validator từ chối pair xuyên polygon). Không cần `medial`; key `medial` cũ còn sót được rule bỏ qua, `tools/strip_medial.py` dọn.
+- **Pair 2 chân:** `{first, second}` cùng 1 polygon (validator từ chối pair xuyên polygon). Không cần `medial`; key `medial` cũ còn sót được rule bỏ qua, `scripts/strip_medial.py` dọn.
 - **Flow vẽ gộp (tool phím `1`):** vẽ polygon → vẽ 2 lines → hỏi cấm quay đầu: `y` = tự sinh cả 2 pairs ngược chiều nhau (`A→B` và `B→A`, chạm 2 vạch đúng chiều từng vạch — thứ tự nào cũng báo) + bật flag; Enter bỏ qua = `no_uturn: false`, xe qua lại bình thường. `wrong_way` trên 2 lines luôn bật với logic cũ.
 - **Rủi ro đã biết & chấp nhận:** bỏ 3 lớp lọc cũ (medial + velocity + time window) nên 2 xe ngược chiều bị gán nhầm 1 ID, hoặc xe loanh quanh chạm 2 vạch cách nhau lâu, có thể báo oan — mitigated bằng dedup cooldown + human-review phúc tra.
 - **Xử lý quay đầu nhiều nhịp (K-Turn / 3-point Turn):** flag vạch 1 giữ theo vòng đời track, nhịp lùi thoải mái vẫn nối được chuỗi (không còn đứt window).

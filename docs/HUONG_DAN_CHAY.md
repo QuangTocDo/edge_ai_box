@@ -20,7 +20,7 @@ Hệ thống xử lý đầu vào đa dạng: **File Video có sẵn (.mp4, .mkv
 1. **Tham số dòng lệnh (`CLI --source`)**: Ưu tiên cao nhất khi chạy test thử nghiệm hoặc ghi đè nhanh.
 2. **Biến môi trường / Secret (`CAM_SOURCE` hoặc `CAM_SOURCE_FILE`)**: Thích hợp khi chạy Docker hoặc triển khai edge device.
 3. **Tự động ghép nối RTSP link qua các biến môi trường**: `IP_CAMERA`, `TK_CAMERA`, `PASSWORD_CAMERA`, `EXTEND_RSTP_LINK`.
-4. **Trường `source:` khai báo trong file cấu hình YAML** (ví dụ `configs/cam_01.yaml`).
+4. **Trường `source:` khai báo trong file cấu hình YAML** (ví dụ `configs/cameras/cam_01.yaml`).
 5. **Nguồn mặc định dự phòng**: `assets/video.mp4`.
 
 ---
@@ -33,7 +33,7 @@ Khi phát triển, kiểm thử thuật toán hoặc đánh giá độ chính x�
 Trước khi chạy pipeline phát hiện vi phạm, bạn cần vẽ vạch và vùng kiểm tra tương ứng với góc máy của video:
 ```bash
 # Mở trực tiếp file video trong công cụ vẽ (tự động lấy frame đại diện ở 1/3 video):
-python tools/draw_lines.py assets/video1.mp4 --config configs/cam_01.yaml
+python scripts/calibrate/draw_lines.py assets/video1.mp4 --config configs/cameras/cam_01.yaml
 ```
 *(Xem chi tiết hướng dẫn thao tác vẽ vạch tại [Mục 4](#4-công-cụ-vẽ--quản-lý-zone--lines-trực-quan-toolsdraw_linespy))*.
 
@@ -41,13 +41,13 @@ python tools/draw_lines.py assets/video1.mp4 --config configs/cam_01.yaml
 
 | Kịch bản | Lệnh thực hiện | Mục đích |
 |---|---|---|
-| **Xem trực tiếp có GUI Overlay** | `python pipeline.py --config configs/cam_01.yaml --source assets/video1.mp4` | Quan sát trực tiếp xe chạy, bounding box, ID tracking, trạng thái đèn và sự kiện vi phạm trên màn hình. Nhấn `q` hoặc `Esc` để thoát. |
-| **Chạy ngầm tốc độ cao (Headless)** | `python pipeline.py --config configs/cam_01.yaml --source assets/video1.mp4 --no-show` | Bỏ qua hiển thị GUI của OpenCV để đạt tốc độ xử lý (FPS) tối đa, tiết kiệm CPU/GPU. |
-| **Tăng tốc xử lý (~2x FPS)** | `python pipeline.py --config configs/cam_01.yaml --source assets/video1.mp4 --no-show --imgsz 480` | Giảm kích thước ảnh đầu vào YOLO xuống 480px, xử lý cực nhanh trên các máy cấu hình khiêm tốn. |
-| **Test nhanh số lượng khung hình** | `python pipeline.py --config configs/cam_01.yaml --source assets/video1.mp4 --max-frames 300` | Chỉ chạy đúng 300 khung hình đầu tiên rồi tự động xuất kết quả và kết thúc. |
-| **Xuất và lưu video kết quả có vẽ Overlay** | `python pipeline.py --config configs/cam_01.yaml --source assets/video1.mp4 --save output_annotated.mp4 --no-show` | Ghi toàn bộ kết quả phân tích kèm vạch kẻ, khung nhận diện xe, thông tin vi phạm ra file `.mp4`. |
-| **Bật Debug logic phân tích Rules** | `python pipeline.py --config configs/cam_01.yaml --source assets/video1.mp4 --debug-rules` | In ra terminal giải thích chi tiết (`explain()`) lý do tại sao một phương tiện bị hoặc chưa bị bắt lỗi sau mỗi 30 frames. |
-| **Chạy qua file cấu hình test tổng hợp** | `python pipeline.py --run-config configs/test_config.yaml` | Tải sẵn toàn bộ tham số test từ file YAML (đường dẫn video, config, imgsz, max_frames). |
+| **Xem trực tiếp có GUI Overlay** | `python pipeline.py --config configs/cameras/cam_01.yaml --source assets/video1.mp4` | Quan sát trực tiếp xe chạy, bounding box, ID tracking, trạng thái đèn và sự kiện vi phạm trên màn hình. Nhấn `q` hoặc `Esc` để thoát. |
+| **Chạy ngầm tốc độ cao (Headless)** | `python pipeline.py --config configs/cameras/cam_01.yaml --source assets/video1.mp4 --no-show` | Bỏ qua hiển thị GUI của OpenCV để đạt tốc độ xử lý (FPS) tối đa, tiết kiệm CPU/GPU. |
+| **Tăng tốc xử lý (~2x FPS)** | `python pipeline.py --config configs/cameras/cam_01.yaml --source assets/video1.mp4 --no-show --imgsz 480` | Giảm kích thước ảnh đầu vào YOLO xuống 480px, xử lý cực nhanh trên các máy cấu hình khiêm tốn. |
+| **Test nhanh số lượng khung hình** | `python pipeline.py --config configs/cameras/cam_01.yaml --source assets/video1.mp4 --max-frames 300` | Chỉ chạy đúng 300 khung hình đầu tiên rồi tự động xuất kết quả và kết thúc. |
+| **Xuất và lưu video kết quả có vẽ Overlay** | `python pipeline.py --config configs/cameras/cam_01.yaml --source assets/video1.mp4 --save output_annotated.mp4 --no-show` | Ghi toàn bộ kết quả phân tích kèm vạch kẻ, khung nhận diện xe, thông tin vi phạm ra file `.mp4`. |
+| **Bật Debug logic phân tích Rules** | `python pipeline.py --config configs/cameras/cam_01.yaml --source assets/video1.mp4 --debug-rules` | In ra terminal giải thích chi tiết (`explain()`) lý do tại sao một phương tiện bị hoặc chưa bị bắt lỗi sau mỗi 30 frames. |
+| **Chạy qua file cấu hình test tổng hợp** | `python pipeline.py --run-config configs/examples/test_config.yaml` | Tải sẵn toàn bộ tham số test từ file YAML (đường dẫn video, config, imgsz, max_frames). |
 
 ### 2.3. Đặc điểm khi chạy với Video có sẵn
 - Pipeline đọc tuần tự từng frame theo FPS gốc của video.
@@ -63,11 +63,11 @@ Khi triển khai thực tế trên thiết bị biên (Edge) hoặc kết nối 
 
 #### Cách 1: Truyền trực tiếp qua CLI (Nhanh nhất khi test link RTSP)
 ```bash
-python pipeline.py --config configs/cam_01.yaml --source "rtsp://admin:Password123@192.168.1.100:554/Streaming/Channels/101"
+python pipeline.py --config configs/cameras/cam_01.yaml --source "rtsp://admin:Password123@192.168.1.100:554/Streaming/Channels/101"
 ```
 
 #### Cách 2: Khai báo trong file cấu hình YAML của Camera
-Trong file cấu hình (ví dụ `configs/cam_01.yaml`), thêm trường `source:` ở cấp gốc:
+Trong file cấu hình (ví dụ `configs/cameras/cam_01.yaml`), thêm trường `source:` ở cấp gốc:
 ```yaml
 camera_id: CAM_HOANG_HOA_THAM_01
 source: "rtsp://admin:Password123@192.168.1.100:554/Streaming/Channels/101"
@@ -75,14 +75,14 @@ source: "rtsp://admin:Password123@192.168.1.100:554/Streaming/Channels/101"
 ```
 Sau đó chỉ cần chạy:
 ```bash
-python pipeline.py --config configs/cam_01.yaml
+python pipeline.py --config configs/cameras/cam_01.yaml
 ```
 
 #### Cách 3: Dùng biến môi trường `CAM_SOURCE` (Khuyên dùng khi chạy Docker/CI)
 Tránh để lộ mật khẩu trong code hoặc file config:
 ```bash
 export CAM_SOURCE="rtsp://admin:Password123@192.168.1.100:554/Streaming/Channels/101"
-python pipeline.py --config configs/cam_01.yaml --no-show
+python pipeline.py --config configs/cameras/cam_01.yaml --no-show
 ```
 
 #### Cách 4: Tự động ghép nối URL từ thông tin Camera (Auto-composed RTSP)
@@ -93,7 +93,7 @@ export TK_CAMERA="admin"
 export PASSWORD_CAMERA="Password123"
 export EXTEND_RSTP_LINK="/Streaming/Channels/101" # Nếu không đặt, mặc định là /MediaInput/h264/stream_1
 
-python pipeline.py --config configs/cam_01.yaml --no-show
+python pipeline.py --config configs/cameras/cam_01.yaml --no-show
 ```
 *Pipeline sẽ tự động tạo URL dạng: `rtsp://admin:Password123@192.168.1.100:554/Streaming/Channels/101`.*
 
@@ -105,7 +105,7 @@ export TK_CAMERA="admin"
 export PASSWORD_CAMERA_FILE="/run/secrets/cam_password"
 export EXTEND_RSTP_LINK="/Streaming/Channels/101"
 
-python pipeline.py --config configs/cam_01.yaml --no-show
+python pipeline.py --config configs/cameras/cam_01.yaml --no-show
 ```
 
 ### 3.2. Cơ chế kỹ thuật chuyên dụng cho luồng RTSP
@@ -128,29 +128,29 @@ Do Camera RTSP là luồng động trực tiếp, quy trình vẽ cấu hình ch
    > [!IMPORTANT]
    > Ảnh snapshot dùng để vẽ vạch **bắt buộc** phải có cùng độ phân giải (ví dụ 1920x1080) với luồng stream mà camera sẽ truyền vào khi chạy thật.
 
-2. **Bước 2: Mở ảnh snapshot trong `tools/draw_lines.py` để thiết lập vạch/vùng:**
+2. **Bước 2: Mở ảnh snapshot trong `scripts/calibrate/draw_lines.py` để thiết lập vạch/vùng:**
    ```bash
-   python tools/draw_lines.py snap_cam01.jpg --config configs/cam_01.yaml
+   python scripts/calibrate/draw_lines.py snap_cam01.jpg --config configs/cameras/cam_01.yaml
    ```
    Vẽ các vạch, vùng cấm, hộp đèn giao thông theo hướng dẫn bên dưới và nhấn `s` để lưu cấu hình.
 
 3. **Bước 3: Khởi chạy pipeline giám sát chính thức:**
    ```bash
-   python pipeline.py --config configs/cam_01.yaml --source "rtsp://admin:Password123@192.168.1.100:554/Streaming/Channels/101" --no-show
+   python pipeline.py --config configs/cameras/cam_01.yaml --source "rtsp://admin:Password123@192.168.1.100:554/Streaming/Channels/101" --no-show
    ```
 
 ---
 
-## 4. Công cụ Vẽ & Quản lý Zone / Lines trực quan (`tools/draw_lines.py`)
+## 4. Công cụ Vẽ & Quản lý Zone / Lines trực quan (`scripts/calibrate/draw_lines.py`)
 
 Giao diện đồ hoạ tương tác dùng để thiết lập vạch ảo, vùng đa giác, hộp đèn giao thông và hiệu chuẩn tốc độ trực tiếp trên ảnh chụp hoặc video camera:
 
 ```bash
 # Mở từ file video:
-python tools/draw_lines.py assets/video1.mp4 --config configs/cam_01.yaml
+python scripts/calibrate/draw_lines.py assets/video1.mp4 --config configs/cameras/cam_01.yaml
 
 # Hoặc mở từ ảnh snapshot camera:
-python tools/draw_lines.py snap_cam01.jpg --config configs/cam_01.yaml
+python scripts/calibrate/draw_lines.py snap_cam01.jpg --config configs/cameras/cam_01.yaml
 ```
 
 ### 4.1. Menu Chọn Lỗi theo Phím Số (1 đến 5)
@@ -216,7 +216,7 @@ python tools/draw_lines.py snap_cam01.jpg --config configs/cam_01.yaml
 
 ---
 
-## 6. Cấu hình YAML Chuẩn (`configs/cam_01.yaml`)
+## 6. Cấu hình YAML Chuẩn (`configs/cameras/cam_01.yaml`)
 
 Dự án hỗ trợ kiến trúc gộp cấu hình: file camera con có thể khai báo `base: base.yaml` để kế thừa toàn bộ tham số model/evidence và chỉ ghi đè phần toạ độ hình học riêng.
 
@@ -338,9 +338,9 @@ Trong mô hình thực tế, **mỗi thiết bị biên (Edge Box / IPC / mini-P
 
 ### 7.1. Quy trình Chuẩn bị tại Con Biên (Chỉ làm 1 lần)
 
-1. **Chuẩn bị file cấu hình camera (`camera_config.yaml`) cho con biên:**
-   Mỗi con biên chỉ cần 1 file `camera_config.yaml` chứa vạch kẻ, vùng cấm, đèn tín hiệu tương ứng với góc nhìn camera của nó.
-   *(Có thể vẽ trước trên máy cá nhân bằng `tools/draw_lines.py` rồi copy file `camera_config.yaml` sang con biên)*.
+1. **Chuẩn bị file cấu hình camera (`configs/active.yaml`) cho con biên:**
+   Mỗi con biên chỉ cần 1 file `configs/active.yaml` chứa vạch kẻ, vùng cấm, đèn tín hiệu tương ứng với góc nhìn camera của nó.
+   *(Vẽ bằng `scripts/calibrate/draw_lines.py --config configs/active.yaml` — nhấn `s` là source + polygon tự ghi vào file, rồi copy sang con biên)*.
 
 2. **Cấu hình nguồn luồng RTSP qua file `.env`:**
    ```bash
@@ -358,7 +358,7 @@ Trên con biên, chỉ cần chạy đúng 1 lệnh:
 docker compose up -d
 ```
 Container `traffic-edge` sẽ tự động:
-- Đọc file `./camera_config.yaml` được mount vào container.
+- Đọc file `./configs/active.yaml` được mount vào container.
 - Kết nối tới luồng RTSP của camera cục bộ.
 - Kích hoạt chế độ `restart: always` (tự động bật lại ngay lập tức khi tủ điện/con biên mất điện rồi có điện lại).
 - Kích hoạt chế độ mạng `network_mode: host` giúp đọc luồng RTSP mượt mà, loại bỏ hoàn toàn độ trễ và hiện tượng rớt gói tin qua Docker NAT.
@@ -386,7 +386,7 @@ Nếu bạn không muốn dùng `docker-compose`, chỉ cần chạy 1 lệnh `d
 docker run -d --name traffic-edge \
   --restart always \
   --network host \
-  -v ./camera_config.yaml:/app/camera_config.yaml:ro \
+  -v ./configs/active.yaml:/app/camera_config.yaml:ro \
   -v ./evidence:/app/evidence \
   -v ./data:/app/data \
   traffic-edge
@@ -488,3 +488,52 @@ python -m tests.test_draw_menu           # Logic menu phím chọn lỗi 1-5
 | Nhấn phím trong `draw_lines.py` không phản hồi | Chuột đang focus ở cửa sổ Terminal thay vì cửa sổ hình ảnh | Click chuột vào cửa sổ đồ hoạ `draw_lines` trước khi bấm phím tắt. |
 | Vạch vẽ trong `draw_lines` bị lệch so với luồng camera thật | Ảnh snapshot chụp để vẽ vạch khác độ phân giải với luồng RTSP | Chụp lại snapshot từ đúng luồng RTSP bằng ffmpeg với cùng resolution trước khi vẽ. |
 | Đèn đỏ nhưng không kích hoạt lỗi vượt | Đèn đang ở trạng thái `YELLOW`, `UNKNOWN` hoặc xe chạm vạch lúc đèn còn xanh | Kiểm tra lại ROI hộp đèn qua overlay; đảm bảo vùng ROI cắt đúng 3 khoang đèn đỏ/vàng/xanh và không bị bóng cây che khuất. |
+
+---
+
+## 11. Web Operations Dashboard & Trích Xuất Bằng Chứng (`scripts/object_browser.py`)
+
+Hệ thống tích hợp sẵn giao diện Web Dashboard quản trị hiện đại (FastAPI + Tailwind CSS + FontAwesome), hỗ trợ tra cứu lưu lượng phương tiện theo thời gian thực và quản lý, trích xuất bằng chứng vi phạm trực tiếp trên trình duyệt.
+
+- **Cổng dịch vụ mặc định**: Port **`8081`** (`http://localhost:8081` hoặc `http://<ip-máy>:8081`).
+- **Nguồn dữ liệu**: Đọc cơ sở dữ liệu `objects.db` (chế độ Read-Only song song an toàn với pipeline đang chạy nhờ SQLite WAL mode) và thư mục lưu trữ bằng chứng `evidence/`.
+
+### 11.1. Cài đặt thư viện phụ thuộc (Dependencies)
+Giao diện yêu cầu `fastapi` và `uvicorn`. Cài đặt nhanh vào môi trường `.venv`:
+```bash
+# Dùng uv (khuyên dùng):
+uv pip install uvicorn fastapi
+
+# Hoặc dùng pip:
+pip install uvicorn fastapi
+```
+
+### 11.2. Hướng dẫn Bật / Tắt Giao diện Web
+
+| Thao tác | Lệnh thực hiện | Ghi chú |
+|---|---|---|
+| **Bật chạy ngầm (Khuyên dùng)** | `setsid python3 -m uvicorn scripts.object_browser:app --host 0.0.0.0 --port 8081 </dev/null >/tmp/browser.log 2>&1 &` | Chạy nền daemon, đóng terminal web vẫn hoạt động bình thường. |
+| **Bật trực tiếp (Foreground)** | `python3 -m uvicorn scripts.object_browser:app --host 0.0.0.0 --port 8081` | Hiện log trực tiếp ra màn hình terminal. Nhấn `Ctrl + C` để dừng. |
+| **Tắt giao diện (Dừng port 8081)** | `fuser -k 8081/tcp` | Giải phóng và đóng ngay tiến trình đang lắng nghe trên cổng 8081. |
+| **Kiểm tra trạng thái hoạt động** | `fuser 8081/tcp` | Trả về PID nếu đang chạy, không hiển thị gì nếu đã dừng. |
+| **Xem log hoạt động thời gian thực** | `tail -f /tmp/browser.log` | Dành cho chế độ chạy ngầm để kiểm tra kết nối và yêu cầu HTTP. |
+
+### 11.3. Các Tính Năng Nổi Bật Trên Web UI
+
+1. **Thanh Thống Kê Trực Quan (Focused KPI Analytics Bar)**:
+   - **Lưu Lượng Phương Tiện**: Hiển thị tổng số xe được nhận diện, phân tích chi tiết chủng loại (`car`, `bus`, `truck`, ...) và thanh dải phổ màu thực tế (**Color Spectrum Bar**) phân tích tỷ lệ màu sắc xe.
+   - **Sự Kiện Vi Phạm Ghi Nhận**: Thống kê số vụ vi phạm kèm thẻ phân loại lỗi (`Đường Cấm`, `Đỗ Xe Trái Phép`, `Vượt Đèn Đỏ`, `Đi Ngược Chiều`), đèn nhấp nháy cảnh báo và trạng thái trích xuất bằng chứng tự động.
+2. **Quản Lý & Xóa Hàng Loạt (Bulk Action & Deletion)**:
+   - Nhấn nút **"Chế độ chọn nhiều"** để tích chọn hàng loạt ảnh xe hoặc sự kiện vi phạm.
+   - Thanh công cụ nổi phía dưới cho phép **"Chọn tất cả"** hoặc **"Xóa các mục đã chọn"** (tự động xóa đồng thời cả bản ghi trong SQLite/JSON và file ảnh trên đĩa).
+3. **Phòng Soi Bằng Chứng Tương Tác Cao (Evidence Theater Modal)**:
+   - **Xem đa góc nhìn**: Chuyển đổi linh hoạt giữa ảnh **Cận Cảnh (Crop)**, **Toàn Cảnh (Full Frame)** và **Chuỗi Bằng Chứng (Diptych / Triptych)**.
+   - **Phóng to chi tiết (2.2x Zoom)**: Click trực tiếp vào ảnh hoặc bấm phím <kbd>Z</kbd> để zoom kiểm tra biển số và làn đường.
+   - **Bộ phím tắt thao tác nhanh (Keyboard HUD)**:
+     - <kbd>←</kbd> / <kbd>→</kbd>: Duyệt nhanh bản ghi trước / sau mà không cần đóng popup.
+     - <kbd>Z</kbd>: Bật / tắt phóng to ảnh.
+     - <kbd>D</kbd>: Tải ảnh bằng chứng về máy tính.
+     - <kbd>Del</kbd>: Xóa bản ghi và file bằng chứng hiện tại.
+     - <kbd>Esc</kbd>: Đóng cửa sổ chi tiết.
+4. **Chế Độ Tự Động Cập Nhật Thời Gian Thực (Live Auto-Refresh)**:
+   - Bật nút **Auto-Refresh** ở góc trên bên phải để dashboard tự động thăm dò và cập nhật dữ liệu mới sau mỗi **6 giây** khi camera phát hiện thêm xe hoặc vi phạm mới.

@@ -5,6 +5,7 @@ Khong can sua pipeline.py hay config_loader.py.
 """
 from .base import BaseRule, cooldown_ok
 from .no_entry_road import NoEntryRule
+from .no_gathering import NoGatheringRule
 from .no_parking import NoParkingRule
 from .no_uturn import NoUTurnRule
 from .red_light_running import RedLightRunningRule
@@ -17,6 +18,7 @@ RULE_REGISTRY = {
     NoUTurnRule.TYPE: NoUTurnRule,
     NoEntryRule.TYPE: NoEntryRule,
     NoParkingRule.TYPE: NoParkingRule,
+    NoGatheringRule.TYPE: NoGatheringRule,
     RedLightRunningRule.TYPE: RedLightRunningRule,
     StopLineRule.TYPE: StopLineRule,
     SpeedingRule.TYPE: SpeedingRule,
@@ -30,13 +32,14 @@ CANONICAL_TYPES = (
     NoUTurnRule.TYPE,
     NoEntryRule.TYPE,
     NoParkingRule.TYPE,
+    NoGatheringRule.TYPE,
     RedLightRunningRule.TYPE,
     StopLineRule.TYPE,
     SpeedingRule.TYPE,
 )
 
 # Ten da biet nhung chua co class Rule -> loader warn, khong crash.
-PLANNED_TYPES = {"no_gathering"}
+PLANNED_TYPES = {"future_unimplemented_rule"}
 
 
 def known_types():
@@ -68,7 +71,7 @@ def create(name, params):
 
 
 __all__ = ["BaseRule", "WrongWayRule", "NoUTurnRule", "NoEntryRule",
-           "NoParkingRule",
+           "NoParkingRule", "NoGatheringRule",
            "RedLightRunningRule", "StopLineRule", "SpeedingRule",
            "RULE_REGISTRY", "PLANNED_TYPES", "known_types", "create",
            "cooldown_ok"]

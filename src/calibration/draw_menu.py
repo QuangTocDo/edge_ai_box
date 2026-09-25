@@ -1,6 +1,6 @@
 """Menu chon loi cho tool ve (pure logic, test headless duoc).
 
-Phim 1-6 chon loi -> tool chi hien/nhan cac cong cu duoc phep cua loi do.
+Phim 1-7 chon loi -> tool chi hien/nhan cac cong cu duoc phep cua loi do.
 """
 from ..business.rules.registry import CANONICAL_TYPES
 
@@ -37,6 +37,11 @@ VIOLATION_MODES = {
           "rules": ["no_parking"],
           "tools": ["polygon", "fields"],
           "auto": "parking_zone"},  # polygon + dwell_s
+    "7": {"violation": "no_gathering",
+          "label": "7=no_gathering (cam tu tap)",
+          "rules": ["no_gathering"],
+          "tools": ["polygon", "fields"],
+          "auto": "gathering_zone"},  # polygon + min_persons/dwell_s
 }
 
 # Phim con trong tung loi -> cong cu (hien tren help theo loi dang chon).
@@ -115,7 +120,7 @@ def validate_tool(key, tool):
     """(ok, ly_do): cong cu co duoc phep trong loi dang chon khong."""
     m = get_mode(key)
     if m is None:
-        return False, "chua chon loi (nhan 1-6 truoc)"
+        return False, "chua chon loi (nhan 1-7 truoc)"
     # 'k' gan signal la alias cua 'roi' (chi loi den do co roi)
     if tool == "roi_link":
         if "roi" in m["tools"]:

@@ -1,6 +1,7 @@
 """Luu minh chung vi pham theo ngay: out/camera/date=YYYY-MM-DD/violation/ (PROJECT_PLAN.md muc 6.0)."""
 import hashlib
 import json
+import logging
 import shutil
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -44,6 +45,42 @@ def _new_names(ts_local, suffix=""):
     file_ts = ts_local.strftime("%H%M%S") + f"_{ts_local.microsecond // 1000:03d}"
     stem = f"{file_ts}_{eid}{suffix}"
     return eid, stem
+
+
+def save_video_clip(frames, fps, out_path, max_dim=1280):
+    """Ghi danh sach cac ndarray frame thanh video clip .mp4.
+    Neu max_dim duoc chi dinh, resize giam kich thuoc tranh file qua nang.
+    """
+    if not frames:
+        return None
+    h, w = frames[0].shape[:2]
+    if max_dim and max(h, w) > max_dim:
+        scale = max_dim / float(max(h, w))
+        target_w = int(w * scale)
+        target_h = int(h * scale)
+    else:
+        target_w, target_h = w, h
+
+    # OpenCV video writer yeu cau width va height phai la so chan
+    target_w = target_w - (target_w % 2)
+    target_h = target_h - (target_h % 2)
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out_file = Path(out_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    writer = cv2.VideoWriter(str(out_file), fourcc, max(1.0, float(fps)), (target_w, target_h))
+    if not writer.isOpened():
+        logging.warning("Khong the mo VideoWriter ghi file: %s", out_file)
+        return None
+
+    for f in frames:
+        if f is None or f.size == 0:
+            continue
+        if f.shape[1] != target_w or f.shape[0] != target_h:
+            f = cv2.resize(f, (target_w, target_h))
+        writer.write(f)
+    writer.release()
+    return str(out_file)
 
 
 def prune_old_dates(cam_dir, retention_days=7):
@@ -116,7 +153,52 @@ def save_event(frame, event, lines, class_names, out_dir="evidence",
                 [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
     digest = hashlib.sha256(jpg.read_bytes()).hexdigest()
 
-    cls = int(event["cls"])
+    # Luu Video clip neu co
+    video_path = None
+    v_frames = event.get("extra", {}).get("video_frames")
+    if v_frames and len(v_frames) > 0:
+        v_fps = float(event.get("extra", {}).get("video_fps", 6.0))
+        v_file = out / f"{stem}.mp4"
+        try:
+            save_video_clip(v_frames, v_fps, v_file)
+            if v_file.is_file():
+                video_path = str(v_file)
+        except Exception as ex:
+            logging.warning("Khong the luu video clip evidence: %s", ex)
+
+    # Luu cac anh crop tung nguoi di bo neu co (pedestrian_crops)
+    ped_crops = event.get("extra", {}).get("pedestrian_crops", [])
+    saved_ped_crops = []
+    for pc in ped_crops:
+        p_id = pc.get("id")
+        p_img = pc.get("crop")
+        if p_img is not None and getattr(p_img, "size", 0) > 0:
+            crop_file = out / f"{stem}_ped_{p_id}.jpg"
+            cv2.imwrite(str(crop_file), p_img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+            saved_ped_crops.append({
+                "id": p_id,
+                "crop_path": str(crop_file),
+                "bbox": pc.get("bbox"),
+                "conf": round(float(pc.get("conf", 0.0)), 3),
+                "t": pc.get("t"),
+                "frame_idx": pc.get("frame_idx"),
+            })
+
+    raw_cls = event.get("cls", 0)
+    try:
+        cls = int(raw_cls)
+        cname = class_names.get(cls, str(cls)) if isinstance(class_names, dict) \
+            else (class_names[cls] if cls < len(class_names) else str(cls))
+    except (ValueError, TypeError):
+        cls = -1
+        cname = str(raw_cls)
+
+    raw_tid = event.get("track_id", 0)
+    try:
+        tid = int(raw_tid)
+    except (ValueError, TypeError):
+        tid = str(raw_tid)
+
     meta = {
         "event_id": eid,
         "camera_id": camera_id,
@@ -127,18 +209,20 @@ def save_event(frame, event, lines, class_names, out_dir="evidence",
         "reference_point": "bottom_center",
         "bottom_center_coord": [round(float(bc[0]), 1), round(float(bc[1]), 1)],
         "bbox": [x1, y1, x2, y2],
-        "track_id": int(event["track_id"]),
+        "track_id": tid,
         "class_id": cls,
-        "class": class_names.get(cls, str(cls)) if isinstance(class_names, dict)
-        else (class_names[cls] if cls < len(class_names) else str(cls)),
+        "class": cname,
         "confidence": round(float(event["conf"]), 3),
         "config_version": config_version,
         "model_version": model_version,
         "line_id": event["line_id"],
-        "extra": event.get("extra", {}),
+        "extra": {k: v for k, v in event.get("extra", {}).items()
+                  if k not in ("evidence_frame", "video_frames", "pedestrian_crops")},
         "heading_deg": event.get("heading_deg"),
         "compass": event.get("compass"),
         "crop_path": crop_path,
+        "video_path": video_path,
+        "pedestrian_crops": saved_ped_crops,
         "image_hash_sha256": digest,
     }
     js = out / f"{stem}.json"
@@ -158,9 +242,15 @@ def _annotate(img, event, lines, caption, ts_text, class_names,
         p2 = tuple(int(v) for v in ln["p2"])
         col = (255, 0, 0) if ln.get("role") == "divider" else (0, 255, 0)
         cv2.line(img, p1, p2, col, 2)
-    cls = int(event["cls"])
-    name = class_names.get(cls, str(cls)) if isinstance(class_names, dict) \
-        else (class_names[cls] if cls < len(class_names) else str(cls))
+
+    raw_cls = event.get("cls", 0)
+    try:
+        cls = int(raw_cls)
+        name = class_names.get(cls, str(cls)) if isinstance(class_names, dict) \
+            else (class_names[cls] if cls < len(class_names) else str(cls))
+    except (ValueError, TypeError):
+        name = str(raw_cls)
+
     cv2.putText(img, f"{caption} | {name} {event['type']}",
                 (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
     cv2.putText(img, ts_text, (10, 60),
@@ -222,7 +312,52 @@ def save_triptych(frames, frame_now, event, lines, class_names,
                         [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
             crop_path = str(crop_file)
 
-    cls = int(event["cls"])
+    # Luu Video clip neu co
+    video_path = None
+    v_frames = event.get("extra", {}).get("video_frames")
+    if v_frames and len(v_frames) > 0:
+        v_fps = float(event.get("extra", {}).get("video_fps", 6.0))
+        v_file = out / f"{stem}.mp4"
+        try:
+            save_video_clip(v_frames, v_fps, v_file)
+            if v_file.is_file():
+                video_path = str(v_file)
+        except Exception as ex:
+            logging.warning("Khong the luu video clip evidence: %s", ex)
+
+    # Luu cac anh crop tung nguoi di bo neu co (pedestrian_crops)
+    ped_crops = event.get("extra", {}).get("pedestrian_crops", [])
+    saved_ped_crops = []
+    for pc in ped_crops:
+        p_id = pc.get("id")
+        p_img = pc.get("crop")
+        if p_img is not None and getattr(p_img, "size", 0) > 0:
+            crop_file = out / f"{stem}_ped_{p_id}.jpg"
+            cv2.imwrite(str(crop_file), p_img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+            saved_ped_crops.append({
+                "id": p_id,
+                "crop_path": str(crop_file),
+                "bbox": pc.get("bbox"),
+                "conf": round(float(pc.get("conf", 0.0)), 3),
+                "t": pc.get("t"),
+                "frame_idx": pc.get("frame_idx"),
+            })
+
+    raw_cls = event.get("cls", 0)
+    try:
+        cls = int(raw_cls)
+        cname = class_names.get(cls, str(cls)) if isinstance(class_names, dict) \
+            else (class_names[cls] if cls < len(class_names) else str(cls))
+    except (ValueError, TypeError):
+        cls = -1
+        cname = str(raw_cls)
+
+    raw_tid = event.get("track_id", 0)
+    try:
+        tid = int(raw_tid)
+    except (ValueError, TypeError):
+        tid = str(raw_tid)
+
     meta = {
         "event_id": eid,
         "camera_id": camera_id,
@@ -234,18 +369,18 @@ def save_triptych(frames, frame_now, event, lines, class_names,
         "bottom_center_coord": [round(float(event["bc"][0]), 1),
                                 round(float(event["bc"][1]), 1)],
         "bbox": [int(v) for v in event["bbox"]],
-        "track_id": int(event["track_id"]),
+        "track_id": tid,
         "class_id": cls,
-        "class": class_names.get(cls, str(cls))
-        if isinstance(class_names, dict)
-        else (class_names[cls] if cls < len(class_names) else str(cls)),
+        "class": cname,
         "confidence": round(float(event["conf"]), 3),
         "config_version": config_version,
         "model_version": model_version,
         "line_id": event["line_id"],
         "extra": {k: v for k, v in event.get("extra", {}).items()
-                  if k != "triptych"},
+                  if k not in ("triptych", "video_frames", "pedestrian_crops")},
         "crop_path": crop_path,
+        "video_path": video_path,
+        "pedestrian_crops": saved_ped_crops,
         "image_hash_sha256": hashlib.sha256(jpg.read_bytes()).hexdigest(),
     }
     js = out / f"{stem}.json"

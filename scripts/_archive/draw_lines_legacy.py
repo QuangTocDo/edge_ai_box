@@ -1,5 +1,5 @@
 """Tool ve virtual line bang click chuot, ghi vao no_way.yaml.
-Chay: python tools/draw_lines.py video.mp4
+Chay: python scripts/calibrate/draw_lines.py video.mp4
 Click theo thu tu: 2 diem L_NB -> 2 diem L_SB -> 2 diem L_medial (divider).
 Phim: f = dao chieu line vua ve | z = undo | s = luu | q = thoat
 Mui ten vang = huong cho phep (allowed_sign). Sai thi nhan f.

@@ -15,7 +15,7 @@ from src.storage.object_store import ObjectStore
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Truy van object store")
-    ap.add_argument("--db", default="objects.db")
+    ap.add_argument("--db", default="var/objects.db")
     ap.add_argument("--date", default="", help="YYYY-MM-DD (mac dinh: hom nay)")
     ap.add_argument("--type", dest="vtype", default="",
                     choices=["", "car", "bus", "truck", "motorbike", "unknown"])

@@ -24,8 +24,9 @@ def cls_name(names, cls: int) -> str:
 
 
 def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
-                 names=None, t_video=0.0, signals=None):
-    """Ve overlay toan dien len frame: den tin hieu, polygons, lines, tracks va HUD."""
+                 names=None, t_video=0.0, signals=None,
+                 pedestrians=None, gathering_zones=None):
+    """Ve overlay toan dien len frame: den tin hieu, polygons, lines, tracks, pedestrians va HUD."""
     # 1. Ve tin hieu den giao thong (neu co)
     for sid, s in (signals.snapshot() if signals else {}).items():
         x1, y1, x2, y2 = s["roi"]
@@ -43,10 +44,34 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
     for p in polygons:
         pts = [(int(x), int(y)) for x, y in (p.get("polygon") or [])]
         if len(pts) >= 3:
-            col = (0, 0, 255) if p.get("kind") == "banned" else (0, 255, 0)
+            pid = p.get("id", "")
+            g_status = (gathering_zones or {}).get(pid)
+            if g_status and g_status.get("gathering"):
+                # Dang co tu tap dong nguoi: vien vang cam/do noi bat va vien day hon
+                is_violated = g_status.get("violated", False) or g_status.get("fired", False)
+                col = (0, 0, 255) if is_violated else (0, 165, 255)
+                thick = 3
+            else:
+                col = (0, 0, 255) if p.get("kind") == "banned" else (0, 255, 0)
+                thick = 2
+
             for a, b in zip(pts, pts[1:] + pts[:1]):
-                cv2.line(img, a, b, col, 2)
-            cv2.putText(img, p["id"], pts[0],
+                cv2.line(img, a, b, col, thick)
+
+            # Hien thi ten polygon va thong so dem so nguoi / tu tap neu co
+            poly_label = pid
+            if g_status:
+                cnt = g_status.get("count", 0)
+                min_p = g_status.get("min_persons", 2)
+                dw = g_status.get("dwell_s", 0.0)
+                tdw = g_status.get("target_dwell_s", 3.0)
+                if g_status.get("violated"):
+                    poly_label += f" [{cnt}/{min_p}p REC CLIP!]"
+                elif cnt >= min_p:
+                    poly_label += f" [{cnt}/{min_p}p {dw:.1f}/{tdw:.0f}s!]"
+                else:
+                    poly_label += f" [{cnt}/{min_p}p]"
+            cv2.putText(img, poly_label, pts[0],
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
 
     # 3. Ve cac vach ao (lines)
@@ -118,9 +143,27 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
         if spd is not None and spd.get("hist"):
             lim = float(spd.get("limit", 50.0))
             stxt = f"{spd.get('smooth', 0.0):.0f} km/h"
-            scol = (0, 0, 255) if spd.get("smooth", 0.0) > lim else (255, 255, 255)
+            scol = (0, 0, 255) if spd.get('smooth', 0.0) > lim else (255, 255, 255)
             cv2.putText(img, stxt, (x1, y2 + 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, scol, 2)
+
+    # 4b. Ve nguoi di bo (giu nguyen label ped, kem id neu co, khong doi label khi vao vung)
+    for p in (pedestrians or []):
+        bb = p.get("bbox")
+        if not bb:
+            continue
+        px1, py1, px2, py2 = [int(v) for v in bb]
+        p_conf = float(p.get("conf", 0.0))
+        p_col = (255, 255, 0)  # Cyan
+        cv2.rectangle(img, (px1, py1), (px2, py2), p_col, 2)
+        bc = (int(p.get("bc", ((px1 + px2) / 2, py2))[0]), int(p.get("bc", ((px1 + px2) / 2, py2))[1]))
+        cv2.circle(img, bc, 4, p_col, -1)
+        pid_str = f"id{p['id']} " if p.get("id") is not None else ""
+        p_lbl = f"{pid_str}ped {p_conf:.2f}"
+        (pw, ph), _ = cv2.getTextSize(p_lbl, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(img, (px1, py1 - ph - 6), (px1 + pw + 4, py1), p_col, -1)
+        cv2.putText(img, p_lbl, (px1 + 2, py1 - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
     # 5. HUD thong tin tren goc trai (FPS, Frame, Thong ke vi pham)
     y = 30
@@ -128,7 +171,7 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
     has_violations = sum(v for k, v in counts.items() if k != "skipped") > 0
     for txt, col in [
         (f"FPS: {fps:.1f}", (0, 255, 0)),
-        (f"frame {frame_idx} tracks {len(tracks)}", (0, 255, 0)),
+        (f"frame {frame_idx} tracks {len(tracks)} peds {len(pedestrians or [])}", (0, 255, 0)),
         (ev_txt, (0, 0, 255) if has_violations else (0, 255, 0)),
     ]:
         cv2.putText(img, txt, (10, y),
@@ -149,8 +192,11 @@ class Visualizer:
         self.names = names
 
     def render(self, img, tracks, fps: float = 0.0, counts: Optional[Dict[str, int]] = None,
-               frame_idx: int = 0, t_video: float = 0.0, signals: Optional[Any] = None):
+               frame_idx: int = 0, t_video: float = 0.0, signals: Optional[Any] = None,
+               pedestrians: Optional[List[Dict[str, Any]]] = None,
+               gathering_zones: Optional[Dict[str, Dict[str, Any]]] = None):
         return draw_overlay(
             img, tracks, self.lines, self.polygons, fps, counts or {},
-            frame_idx, names=self.names, t_video=t_video, signals=signals
+            frame_idx, names=self.names, t_video=t_video, signals=signals,
+            pedestrians=pedestrians, gathering_zones=gathering_zones
         )

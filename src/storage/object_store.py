@@ -38,14 +38,15 @@ CREATE INDEX IF NOT EXISTS idx_objects_track
     ON objects (track_id, camera_id);
 """
 
-# class id YOLO (day/night) -> loai xe gon. Model hien khong co person.
+# class id YOLO (day/night + pedestrian id 8).
 VEHICLE_TYPE = {0: "motorbike", 1: "car", 2: "bus", 3: "truck",
-                4: "motorbike", 5: "car", 6: "bus", 7: "truck"}
+                4: "motorbike", 5: "car", 6: "bus", 7: "truck",
+                8: "pedestrian"}
 
 AREA_REPLACE_FACTOR = 1.5
 CONF_REPLACE_DELTA = 0.15
 MAX_REWRITES = 3
-MIN_CONF =0.99  # best_conf duoi nguong nay -> xoa han luc finalize
+MIN_CONF = 0.75  # best_conf duoi nguong nay -> xoa han luc finalize
 MIN_AREA_PX = 64 * 64
 MIN_DURATION_S = 1.0
 CROP_PAD = 0.0  # khong margin: crop khit bbox de mau HSV dung vung than xe
@@ -60,7 +61,10 @@ def vehicle_type_of(cls):
 
 
 class ObjectStore:
-    def __init__(self, db_path="objects.db", crop_root="objects",
+    """DB + crop nam gon trong var/ ( tranh bi don nham voi code).
+    db: var/objects.db | crop: var/objects/<ngay>/<run>/."""
+
+    def __init__(self, db_path="var/objects.db", crop_root="var/objects",
                  retention_days=7, run_id=""):
         self.db_path = str(db_path)
         self.crop_root = Path(crop_root)
@@ -160,7 +164,11 @@ class ObjectStore:
             return False
         row = self._row(tid, camera_id, date)
         if row is None:
-            # G1: ID moi -> ghi ngay
+            # G1: ID moi -> chi ghi khi du chuan conf ngay tu dau.
+            # Track yeu khong ton imwrite/HSV/INSERT; doi frame sau dat
+            # chuan thi G1 bat dau tu do (G2 bu lai shot tot hon).
+            if conf < MIN_CONF:
+                return False
             crop_path, _, crop_img = self._crop_and_save(frame, bbox, date, tid, 0)
             color, cconf, _ = dominant_color_robust(
                 crop_img, bbox,
@@ -186,8 +194,10 @@ class ObjectStore:
             area_old = max(0.0, (old[2] - old[0]) * (old[3] - old[1]))
         except (ValueError, IndexError):
             area_old = 0.0
-        # G2: chi thay khi ro rang tot hon
-        if not (area_now >= area_old * AREA_REPLACE_FACTOR
+        # G2: chi thay khi ro rang tot hon VA dat chuan conf
+        # (tranh ha best_conf xuong duoi nguong bang shot to nhung mo).
+        if conf < MIN_CONF or not (
+                area_now >= area_old * AREA_REPLACE_FACTOR
                 or conf >= float(best_conf) + CONF_REPLACE_DELTA):
             self._db.execute(
                 "UPDATE objects SET last_seen=?, frames=frames+1 "

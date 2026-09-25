@@ -50,8 +50,13 @@ configs/active.yaml
 !weights/**
 # best.pt 15MB: local only, không đẩy remote (dùng best_15thg9.pt đã track)
 weights/best.pt
+# weights train/test local (chua chot version, khong day remote)
+weights/best_23thg9.pt
+weights/best_23thg9.onnx
+weights/yolo26n.pt
 runs/
 *.log
+nohup.out
 
 # ================= Dataset anh/label =================
 # Anh + label nang (GB), version rieng tren server.
@@ -65,10 +70,8 @@ assets/
 # Anh minh chung vi pham sinh ra khi chay pipeline & heartbeat data
 evidence/
 data/
-objects/
-*.db
-*.db-wal
-*.db-shm
+# Runtime rieng (DB + crop + cache): 1 dong duy nhat, khong don le
+var/
 out/
 vis_*.jpg
 capture_*.jpg
@@ -90,3 +93,4 @@ capture_*.jpg
 # dataset yaml rieng cua tung may, khong commit
 /data_cctv/data.yaml
 /data_v1/data.yaml
+/data_v2/data.yaml

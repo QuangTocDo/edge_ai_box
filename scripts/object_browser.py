@@ -23,8 +23,8 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 
-DB_PATH = str(REPO_ROOT / "objects.db")
-CROP_ROOT = REPO_ROOT / "objects"
+DB_PATH = str(REPO_ROOT / "var" / "objects.db")
+CROP_ROOT = REPO_ROOT / "var" / "objects"
 EV_ROOT = REPO_ROOT / "evidence"
 
 app = FastAPI(title="Edge Traffic AI - Cyber Operations Dashboard")

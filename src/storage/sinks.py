@@ -56,6 +56,10 @@ class AsyncEvidenceSaver:
                     e_copy["extra"]["triptych"] = [img.copy() for img in e["extra"]["triptych"]]
                 if "evidence_frame" in e["extra"] and e["extra"]["evidence_frame"] is not None:
                     e_copy["extra"]["evidence_frame"] = e["extra"]["evidence_frame"].copy()
+                if "video_frames" in e["extra"] and e["extra"]["video_frames"]:
+                    e_copy["extra"]["video_frames"] = list(e["extra"]["video_frames"])
+                if "pedestrian_crops" in e["extra"] and e["extra"]["pedestrian_crops"]:
+                    e_copy["extra"]["pedestrian_crops"] = [dict(c) for c in e["extra"]["pedestrian_crops"]]
             self._q.put_nowait((e_copy, f_copy, all_lines, names, out_dir, camera_id,
                                 config_version, model_version, jpeg_quality, timezone_name))
             return True

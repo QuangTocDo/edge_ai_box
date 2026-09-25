@@ -5,6 +5,7 @@ Chon loi truoc (bat buoc de ve moi):
   1=wrong_way (chi ve line) | 2=no_uturn (polygon+line+pair)
   3=no_entry (polygon banned) | 4=red_light (polygon lane+line+ROI+nga tu)
   5=speeding (polygon+calib) | 6=no_parking (polygon cam do)
+  7=no_gathering (polygon cam tu tap)
   0=ve menu tu do (legacy)
 Sau khi chon loi, chi hien/nhan cong cu duoc phep:
   l=ve line | p=ve dinh polygon | a=gan pair tay | r=keo ROI den
@@ -18,8 +19,10 @@ Chung:
   s = luu bat cu luc nao (tu doc lai file de xac nhan)
   Esc = huy thao tac do | q = thoat (chua luu phai nhan q 2 lan)
 """
+import math
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -31,7 +34,7 @@ from src.calibration.draw_menu import (allowed_tools, default_rules, get_mode, m
                            validate_tool)  # noqa: E402
 from src.utils.geometry import (allowed_vec, line_near_or_in_polygon,
                           point_in_polygon)  # noqa: E402
-from src.utils.homography import build_H  # noqa: E402
+from src.utils.homography import build_H, pixel_to_road  # noqa: E402
 from src.config.zones import (add_polygon, delete_line, delete_polygon,
                              delete_signal, finalize_zone, find_polygon,
                              flip_line, get_polygons, iter_all_lines,
@@ -185,7 +188,7 @@ def main():
     standalone = False  # True = ve wrong_way don, giu top-level
     roi_drag: dict = {"p0": None, "p1": None}  # keo chuot mode roi
     calib: dict | None = None  # {"poly_id": str, "stage": "pts"|"dir", "pts": [(x,y)]} mode c
-    violation: str | None = None  # None = menu chinh; "1".."6" = loi dang chon
+    violation: str | None = None  # None = menu chinh; "1".."7" = loi dang chon
     pending_kind: str | None = None  # kind ep cho polygon sap ve (menu tu dat)
     active_red_poly: str | None = None  # id polygon do dang ve (loi 4, de gan clearance)
 
@@ -327,7 +330,7 @@ def main():
             kind = (input("kind [banned/directional/intersection] (mac dinh directional): ")
                     or "directional").strip()
         elif kind is None:
-            kind = "banned" if violation in ("3", "6") else "directional"
+            kind = "banned" if violation in ("3", "6", "7") else "directional"
         try:
             if violation == "6":
                 dw = input("dwell_s thoi gian do xe de bao loi (mac dinh 10s): ").strip() or "10"
@@ -335,6 +338,20 @@ def main():
                                 banned_classes=[],
                                 active_hours=[],
                                 dwell_s=float(dw))
+            elif violation == "7":
+                mp = input("min_persons so nguoi toi thieu de bao tu tap (mac dinh 5): ").strip() or "5"
+                dw = input("dwell_s thoi gian duy tri dam dong (mac dinh 60s): ").strip() or "60"
+                ah = input("active_hours vd '22:00-05:00' (mac dinh rong): ").strip()
+                p = add_polygon(cfg, poly_pts, kind="banned",
+                                banned_classes=[],
+                                active_hours=[x for x in ah.split(",") if x.strip()],
+                                dwell_s=float(dw))
+                p.setdefault("rules", {})["no_gathering"] = {
+                    "enable": True,
+                    "min_persons": int(mp),
+                    "dwell_s": float(dw),
+                    "cooldown_s": 300.0,
+                }
             elif kind == "banned":
                 bc = input("banned_classes vd '0,4' (mac dinh rong): ").strip()
                 ah = input("active_hours vd '18:00-05:00' (mac dinh rong): "
@@ -394,7 +411,10 @@ def main():
                 print("Khong thay polygon do de gan clearance "
                       "(ve polygon do truoc)")
             return
+        existing_custom = (p.get("rules") or {}).get("no_gathering", {})
         p["rules"] = default_rules(violation)
+        if violation == "7" and existing_custom:
+            p["rules"]["no_gathering"].update(existing_custom)
         if violation == "4":
             active_red_poly = p["id"]
         if violation == "5":
@@ -404,7 +424,6 @@ def main():
 
     def close_calib():
         nonlocal dirty, calib, tool_mode
-        from datetime import datetime
         if calib is None:
             return False
         poly = find_polygon(cfg, calib["poly_id"])
@@ -430,7 +449,6 @@ def main():
                     except (ValueError, IndexError):
                         print("    Sai format, vd: 0 0")
             try:
-                from src.utils.homography import build_H
                 H, inl, err = build_H(
                     [[x, y] for x, y in pts], dst)
             except ValueError as e:
@@ -457,7 +475,28 @@ def main():
             print(f"Can dung 2 diem huong (dang co {len(pts)}), Esc huy")
             return False
         (ax, ay), (bx, by) = pts
-        import math
+        src_pts = poly.get("homography", {}).get("src")
+        dst_pts = poly.get("homography", {}).get("dst")
+        if src_pts and dst_pts and len(src_pts) >= 4 and len(dst_pts) >= 4:
+            try:
+                H_mat, _, _ = build_H(src_pts, dst_pts)
+                xa, ya = pixel_to_road(H_mat, ax, ay)
+                xb, yb = pixel_to_road(H_mat, bx, by)
+                dx, dy = xb - xa, yb - ya
+                n = math.hypot(dx, dy)
+                if n < 1e-9:
+                    print("2 diem tren mat duong trung nhau, chon lai (Esc huy)")
+                    calib["pts"] = []
+                    return False
+                poly["road_dir"] = [dx / n, dy / n]
+                print(f"Da chieu len mat duong met: A({xa:.2f},{ya:.2f}) -> B({xb:.2f},{yb:.2f})")
+                print(f"Da luu road_dir={[round(v, 4) for v in poly['road_dir']]} vao {poly['id']}")
+                calib = None
+                tool_mode = "line"
+                dirty = True
+                return True
+            except Exception as e:
+                print(f"Loi chieu road_dir qua H: {e}, fallback dung toa do pixel")
         n = math.hypot(bx - ax, by - ay)
         if n < 1e-9:
             print("2 diem trung nhau, chon lai (Esc huy)")
@@ -491,7 +530,7 @@ def main():
         wizard = None
         standalone = False
         pending_kind = kind
-        label = {"directional": "lane/zone", "banned": "vung cam/cam do",
+        label = {"directional": "lane/zone", "banned": "vung cam/cam do/cam tu tap",
                  "intersection": "vung nga tu"}.get(kind, kind)
         print(f"Ve {label}: click tung dinh -> Enter chot, Esc huy")
 
@@ -644,7 +683,7 @@ def main():
                     (10, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
         y0 = 108
         for p in get_polygons(cfg):
-            on = [r for r in ("wrong_way", "no_uturn", "no_entry_road", "no_parking", "red_light_running", "stop_line")
+            on = [r for r in ("wrong_way", "no_uturn", "no_entry_road", "no_parking", "no_gathering", "red_light_running", "stop_line")
                   if (p.get("rules") or {}).get(r, {}).get("enable", True)]
             cv2.putText(vis, f"{p['id']}: {'+'.join(on) if on else 'tat het'}",
                         (10, y0), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
@@ -662,7 +701,7 @@ def main():
             quit_armed = False
 
         kchr = chr(key) if key < 256 else ""
-        if kchr in ("1", "2", "3", "4", "5", "6"):
+        if kchr in ("1", "2", "3", "4", "5", "6", "7"):
             if _busy():
                 msg = "Dang ve do, Esc truoc khi doi loi"
                 print(msg)
@@ -706,7 +745,7 @@ def main():
                     _start_line_draw()
                 elif kchr == "p":
                     _start_polygon_draw(
-                        "banned" if violation in ("3", "6") else "directional")
+                        "banned" if violation in ("3", "6", "7") else "directional")
                 elif kchr == "a":
                     _start_pair_mode()
                 elif kchr == "r":

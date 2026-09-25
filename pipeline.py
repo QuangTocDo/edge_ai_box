@@ -19,7 +19,7 @@ from src.camera.capture import (AsyncStreamReader, _is_stream, _mask_source,
                                  _open_capture)
 from src.config.loader import ConfigError, load_camera_config
 from src.utils.geometry import now_minutes
-from src.inference.detector import create_tracker
+from src.inference.detector import create_tracker, create_pedestrian_detector
 from src.config.zones import iter_all_lines
 from src.pipeline.runner import (FrameContext, build_runners, run_first_event,
                                 wanted_entries)
@@ -158,6 +158,27 @@ def main():
     logging.info("[CONFIG] Camera ID: %s | Model: %s | Imgsz: %dpx | Source: %s (%s)",
                  camera_id, mc.get("weights", ""), effective_imgsz, _mask_source(src), src_from)
 
+    # Khoi tao Secondary model ONNX rieng cho rule no_gathering (neu co polygon bat rule nay)
+    gathering_entries = [e for e in plan if e["rule"] == "no_gathering"]
+    ped_detector = None
+    ped_cfg = {}
+    if gathering_entries:
+        sec_cfg = cfg.get("secondary_models", {})
+        ped_cfg = (cfg.get("no_gathering") or {}).get("model") or sec_cfg.get("pedestrian") or {}
+        if not ped_cfg:
+            for ge in gathering_entries:
+                m = (ge.get("polygon", {}).get("rules", {}).get("no_gathering") or {}).get("model")
+                if m:
+                    ped_cfg = m
+                    break
+        ped_detector = create_pedestrian_detector(ped_cfg)
+        if ped_detector is not None:
+            logging.info("[SECONDARY] Pedestrian ONNX Model da kich hoat cho %d polygon no_gathering: %s",
+                         len(gathering_entries), ped_cfg.get("weights"))
+        else:
+            logging.warning("[SECONDARY] Co %d polygon no_gathering nhung model chua duoc kich hoat hoac file khong ton tai: %s",
+                            len(gathering_entries), ped_cfg.get("weights"))
+
     red_cfg = cfg.get("red_light", {})
     signals = SignalStore(cfg.get("signals", []), red_cfg,
                           wall_min=now_minutes(tz))
@@ -207,6 +228,7 @@ def main():
                 f"(video can mount ./assets, RTSP can mang + dung pass)")
 
     fps_src = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    ped_interval = max(1, int(ped_cfg.get("infer_interval_frames", int(fps_src or 30))))
     logging.info("Mo INPUT SRC OK (%s): %s (fps~%.1f)",
                  src_from, _mask_source(src), fps_src)
     writer = None
@@ -224,6 +246,9 @@ def main():
     last_prune = start_t
     ev_dir = str(ev.get("dir", "evidence"))
     retention_days = ev.get("retention_days", 7)
+
+    last_peds = []
+    gathering_status = {}
 
     try:
         while not STOP["flag"]:
@@ -274,6 +299,56 @@ def main():
                                              retention_days, last_prune,
                                              time.perf_counter())
 
+            # Secondary model inference: Kiem tra tu tap dong nguoi dinh ky
+            # Chi detect trong ROI cua tung polygon cam (khong detect ca frame)
+            if ped_detector is not None and gathering_entries and (frame_idx % ped_interval == 0):
+                try:
+                    all_peds = []
+                    for ge in gathering_entries:
+                        poly_obj = ge["polygon"]
+                        pts = poly_obj.get("polygon") or []
+                        if not pts:
+                            continue
+                        peds_in_poly = ped_detector.detect_in_polygon(frame, pts)
+                        all_peds.extend(peds_in_poly)
+
+                        g_rule = rule_of.get(id(ge))
+                        if g_rule is None:
+                            continue
+                        ev_g = g_rule.update_zone(
+                            polygon=poly_obj,
+                            persons=peds_in_poly,
+                            wall_min=wall_min,
+                            frame_idx=frame_idx,
+                            t=t,
+                            frame=frame
+                        )
+                        if ev_g:
+                            counts[ev_g["type"]] = counts.get(ev_g["type"], 0) + 1
+                            evidence_saver.submit(
+                                ev_g, frame=frame, all_lines=all_lines,
+                                names={0: "pedestrian", -1: "gathering"},
+                                out_dir=ev_dir, camera_id=camera_id,
+                                config_version=str(cfg.get("config_version", "cfg_v1")),
+                                model_version=Path(str(ped_cfg.get("weights", "pedestrian"))).stem,
+                                jpeg_quality=int(ev.get("jpeg_quality", 90)),
+                                timezone_name=tz)
+                            last_prune = maybe_prune(ev_dir, camera_id,
+                                                     retention_days, last_prune,
+                                                     time.perf_counter())
+                    last_peds = all_peds
+                except Exception:
+                    logging.exception("Loi chay secondary pedestrian detector frame %d", frame_idx)
+
+            if gathering_entries:
+                gathering_status = {}
+                for ge in gathering_entries:
+                    poly_obj = ge["polygon"]
+                    pid = poly_obj.get("id")
+                    g_rule = rule_of.get(id(ge))
+                    if g_rule and hasattr(g_rule, "get_zone_status"):
+                        gathering_status[pid] = g_rule.get_zone_status(pid, t=t)
+
             # Object store truy van nhanh (G1/G2/G3): khong bao gio chan loop
             if obj_store is not None:
                 try:
@@ -308,9 +383,13 @@ def main():
 
             # Chi ve overlay neu hien thi len man hinh hoac luu video
             need_vis = not args.no_show or bool(args.save)
-            vis = vis_renderer.render(frame, tracks, fps=fps, counts=counts,
-                                      frame_idx=frame_idx, t_video=t,
-                                      signals=signals) if need_vis else frame
+            vis = vis_renderer.render(
+                frame, tracks, fps=fps, counts=counts,
+                frame_idx=frame_idx, t_video=t,
+                signals=signals,
+                pedestrians=last_peds,
+                gathering_zones=gathering_status
+            ) if need_vis else frame
 
             if args.save:
                 if writer is None:

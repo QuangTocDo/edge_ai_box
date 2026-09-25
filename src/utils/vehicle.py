@@ -1,8 +1,9 @@
 """Map id class YOLO (day/night) -> ten xe gon cho UI overlay.
 
-Model train 8 class ngay/dem (data_v1):
+Model train 8 class ngay/dem (data_v1) + pedestrian (id 8):
   0=motorbike_day, 1=car_day, 2=bus_day, 3=truck_day,
-  4=motorbike_night, 5=car_night, 6=bus_night, 7=truck_night.
+  4=motorbike_night, 5=car_night, 6=bus_night, 7=truck_night,
+  8=pedestrian.
 
 PHAM VI: chi hien thi (visualizer overlay). Khong phai co che VLM.
 Moi noi nhap/xu ly idx (rules, banned_classes, configs, evidence JSON)
@@ -17,6 +18,7 @@ VEHICLE_NAMES = {
     5: "car",
     6: "bus",
     7: "truck",
+    8: "pedestrian",
 }
 
 

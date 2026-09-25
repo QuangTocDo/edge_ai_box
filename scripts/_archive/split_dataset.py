@@ -5,7 +5,7 @@ import random
 import shutil
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent  # project root (script nam trong tools/)
+ROOT = Path(__file__).parent.parent  # project root (script nam trong scripts/_archive/)
 DATA = ROOT / "data"
 SEED = 42
 SUBSETS = [

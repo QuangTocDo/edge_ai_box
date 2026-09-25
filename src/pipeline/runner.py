@@ -29,8 +29,10 @@ def build_runners(plan):
 
 def wanted_entries(track, plan_entries):
     """Cac plan entry ap dung cho track (rong = ngoai moi polygon: skip)."""
-    return entries_for(track.pts[-1], plan_entries, point_in_polygon,
-                       track=track)
+    # no_gathering duoc xu ly doc lap theo chu ky boi secondary pedestrian model
+    return [e for e in entries_for(track.pts[-1], plan_entries, point_in_polygon,
+                                   track=track)
+            if e.get("rule") != "no_gathering"]
 
 
 def run_first_event(track, wanted, rule_of, frame_idx=0, t=0.0, wall_min=None,

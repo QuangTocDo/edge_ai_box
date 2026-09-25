@@ -29,9 +29,9 @@ Nếu muốn chạy nhanh không cần mở cửa sổ GUI (chế độ Headless
 Hệ thống cung cấp giao diện vẽ vạch ảo theo quy trình **Chọn Loại Lỗi Trước (Phím 1-5)**:
 
 ```bash
-.venv/bin/python tools/draw_lines.py snap_cam01.jpg --config no_way.yaml
+.venv/bin/python scripts/calibrate/draw_lines.py snap_cam01.jpg --config no_way.yaml
 ```
-*(Nếu chưa có ảnh snapshot, có thể truyền trực tiếp file video: `python tools/draw_lines.py assets/video.mp4`)*.
+*(Nếu chưa có ảnh snapshot, có thể truyền trực tiếp file video: `python scripts/calibrate/draw_lines.py assets/video.mp4`)*.
 
 ### 📌 Các bước vẽ cho từng loại lỗi:
 

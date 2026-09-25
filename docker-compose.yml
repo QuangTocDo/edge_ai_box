@@ -30,12 +30,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - YOLO_CONFIG_DIR=/tmp
     volumes:
-      # Mount file config rieng cua con bien nay (mac dinh configs/active.yaml,
-      # ve bang draw tool roi pipeline doc tu day)
-      - type: bind
-        source: ${CONFIG_FILE:-./configs/active.yaml}
-        target: /app/camera_config.yaml
-        read_only: true
+      # Mount cả thư mục configs (nhất quán với deploy.sh):
+      # entrypoint đọc $CONFIG_FILE (mặc định configs/active.yaml),
+      # fallback configs/cameras/${CAMERA_ID}.yaml
+      - ./configs:/app/configs:ro
       - ./evidence:/app/evidence
       - ./data:/app/data
       - ./assets:/app/assets:ro

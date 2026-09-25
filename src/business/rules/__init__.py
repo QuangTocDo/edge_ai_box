@@ -4,6 +4,7 @@
 """
 from .base import BaseRule, cooldown_ok
 from .no_entry_road import NoEntryRule
+from .no_gathering import NoGatheringRule
 from .no_parking import NoParkingRule
 from .no_uturn import NoUTurnRule
 from .red_light_running import RedLightRunningRule
@@ -13,7 +14,7 @@ from .stop_line import StopLineRule
 from .wrong_way import WrongWayRule
 
 __all__ = ["BaseRule", "WrongWayRule", "NoUTurnRule", "NoEntryRule",
-           "NoParkingRule",
+           "NoParkingRule", "NoGatheringRule",
            "RedLightRunningRule", "StopLineRule", "SpeedingRule",
            "RULE_REGISTRY", "PLANNED_TYPES", "cooldown_ok", "create",
            "known_types"]

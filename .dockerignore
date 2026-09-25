@@ -34,6 +34,5 @@ evidence/
 
 # Docs va dev-only
 docs/
-tools/
 tests/
 main.py

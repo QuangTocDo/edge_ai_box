@@ -5,6 +5,7 @@
   frame moi nhat) de triet tre tich luy khi inference cham hon FPS stream.
 """
 import logging
+import os
 import threading
 import time
 
@@ -31,9 +32,18 @@ def _is_stream(src):
 
 def _open_capture(src, attempts=5, delay_s=3.0):
     """Mo VideoCapture co retry (cho RTSP rot mang). Tra ve cap hoac None."""
+    if _is_stream(src):
+        # Ep giao thuc TCP de chong rot goi UDP (tranh hien tuong soc xam/vo hinh khi mang yeu)
+        os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
+
     for i in range(max(1, attempts)):
         cap = cv2.VideoCapture(src)
         if cap.isOpened():
+            if _is_stream(src):
+                try:
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                except Exception:
+                    pass
             return cap
         cap.release()
         if i + 1 < attempts:

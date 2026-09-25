@@ -2,7 +2,7 @@
 #
 # Trien khai nhanh nhat tai tung con bien:
 #   1. Dat file cau hinh camera tai ./configs/active.yaml
-#      (ve bang tools/draw_lines.py -> luu vao active.yaml; pipeline doc tu day)
+#      (ve bang scripts/calibrate/draw_lines.py -> luu vao active.yaml; pipeline doc tu day)
 #      hoac khai bao qua .env (CONFIG_FILE)
 #   2. Khoi chay don gian chi voi file config:
 #        docker compose up -d

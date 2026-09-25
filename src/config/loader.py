@@ -329,6 +329,12 @@ def resolve_plan(cfg):
                 plan.append({"polygon": p, "rule": rule,
                              "params": effective_params(cfg, p, rule),
                              "lines": [], "pairs": []})
+            elif rule == "no_gathering":
+                if p["id"] == IMPLICIT_ID or not p.get("polygon"):
+                    continue
+                plan.append({"polygon": p, "rule": rule,
+                             "params": effective_params(cfg, p, rule),
+                             "lines": [], "pairs": []})
             elif rule == "speeding":
                 if p["id"] == IMPLICIT_ID or p.get("_H") is None:
                     continue

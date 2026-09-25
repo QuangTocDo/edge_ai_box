@@ -30,7 +30,7 @@ test:
 	python -m pytest tests/ -q
 
 bench:
-	python tools/benchmark_onnx.py --weights weights/best_15thg9.onnx 2>/dev/null || python tools/benchmark_onnx.py
+	python scripts/benchmark_onnx.py --weights weights/best_15thg9.onnx 2>/dev/null || python scripts/benchmark_onnx.py
 
 health:
 	./scripts/health_check.sh 2>/dev/null || ls -l data/heartbeat_* 2>/dev/null || echo "no heartbeat yet (run pipeline first)"
