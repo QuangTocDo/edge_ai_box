@@ -11,7 +11,7 @@ from pathlib import Path
 
 import cv2
 
-from ..utils.color import dominant_color_robust, frame_gains
+from ..utils.color import dominant_colors_top2, dominant_color_robust, frame_gains
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS objects (
@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS objects (
     vehicle_type TEXT,
     color TEXT,
     color_conf REAL,
+    secondary_color TEXT DEFAULT '',
+    secondary_conf REAL DEFAULT 0.0,
     best_conf REAL,
     best_bbox TEXT,
     crop_path TEXT,
@@ -49,7 +51,7 @@ MAX_REWRITES = 3
 MIN_CONF = 0.75  # best_conf duoi nguong nay -> xoa han luc finalize
 MIN_AREA_PX = 64 * 64
 MIN_DURATION_S = 1.0
-CROP_PAD = 0.0  # khong margin: crop khit bbox de mau HSV dung vung than xe
+CROP_PAD = 0.0  # khong margin: crop khit bbox de mau HSV/K-Means dung vung than xe
 CROP_QUALITY = 90
 
 
@@ -86,29 +88,37 @@ class ObjectStore:
             return
         if not cols:
             return
-        if "run_id" in cols:
-            return
-        self._db.executescript("""
-            CREATE TABLE IF NOT EXISTS objects_new (
-                track_id INTEGER, camera_id TEXT, date TEXT,
-                run_id TEXT DEFAULT '', vehicle_type TEXT, color TEXT,
-                color_conf REAL, best_conf REAL, best_bbox TEXT,
-                crop_path TEXT, first_seen REAL, last_seen REAL,
-                frames INTEGER DEFAULT 1, rewrites INTEGER DEFAULT 0,
-                low_quality INTEGER DEFAULT 0,
-                PRIMARY KEY (track_id, camera_id, date, run_id));
-            INSERT INTO objects_new
-                (track_id, camera_id, date, run_id, vehicle_type, color,
-                 color_conf, best_conf, best_bbox, crop_path, first_seen,
-                 last_seen, frames, rewrites, low_quality)
-                SELECT track_id, camera_id, date, 'pre-runs', vehicle_type,
-                 color, color_conf, best_conf, best_bbox, crop_path,
-                 first_seen, last_seen, frames, rewrites, low_quality
-                FROM objects;
-            DROP TABLE objects;
-            ALTER TABLE objects_new RENAME TO objects;
-        """)
-        self._db.commit()
+        if "run_id" not in cols:
+            self._db.executescript("""
+                CREATE TABLE IF NOT EXISTS objects_new (
+                    track_id INTEGER, camera_id TEXT, date TEXT,
+                    run_id TEXT DEFAULT '', vehicle_type TEXT, color TEXT,
+                    color_conf REAL, best_conf REAL, best_bbox TEXT,
+                    crop_path TEXT, first_seen REAL, last_seen REAL,
+                    frames INTEGER DEFAULT 1, rewrites INTEGER DEFAULT 0,
+                    low_quality INTEGER DEFAULT 0,
+                    PRIMARY KEY (track_id, camera_id, date, run_id));
+                INSERT INTO objects_new
+                    (track_id, camera_id, date, run_id, vehicle_type, color,
+                     color_conf, best_conf, best_bbox, crop_path, first_seen,
+                     last_seen, frames, rewrites, low_quality)
+                    SELECT track_id, camera_id, date, 'pre-runs', vehicle_type,
+                     color, color_conf, best_conf, best_bbox, crop_path,
+                     first_seen, last_seen, frames, rewrites, low_quality
+                    FROM objects;
+                DROP TABLE objects;
+                ALTER TABLE objects_new RENAME TO objects;
+            """)
+            self._db.commit()
+            cols = [r[1] for r in self._db.execute("PRAGMA table_info(objects)")]
+
+        if "secondary_color" not in cols:
+            try:
+                self._db.execute("ALTER TABLE objects ADD COLUMN secondary_color TEXT DEFAULT ''")
+                self._db.execute("ALTER TABLE objects ADD COLUMN secondary_conf REAL DEFAULT 0.0")
+                self._db.commit()
+            except Exception:
+                pass
 
     def _crop_and_save(self, frame, bbox, date, tid, rev):
         h, w = frame.shape[:2]
@@ -123,30 +133,27 @@ class ObjectStore:
         crop = frame[y1:y2, x1:x2]
         if crop.size == 0:
             return None, 0, None
-        runshort = (self.run_id or "local")[:8]
-        out = self.crop_root / str(date) / runshort / f"{tid}_{rev}.jpg"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        ok = cv2.imwrite(str(out), crop,
-                         [cv2.IMWRITE_JPEG_QUALITY, CROP_QUALITY])
-        if not ok:
-            return None, 0, None
-        area = (x2 - x1) * (y2 - y1)
-        return str(out), area, crop
+        folder = self.crop_root / str(date) / (self.run_id or "default")
+        folder.mkdir(parents=True, exist_ok=True)
+        filename = f"{tid}_{rev}.jpg"
+        target = folder / filename
+        ok = cv2.imwrite(str(target), crop, [int(cv2.IMWRITE_JPEG_QUALITY), CROP_QUALITY])
+        return (str(target), rev, crop) if ok else (None, 0, None)
 
     def _where_run(self):
         return "track_id=? AND camera_id=? AND date=? AND run_id=?"
 
     def _row(self, tid, camera_id, date):
         cur = self._db.execute(
-            "SELECT best_conf, best_bbox, rewrites FROM objects "
-            f"WHERE {self._where_run()}",
+            f"SELECT best_conf, best_bbox, rewrites FROM objects WHERE {self._where_run()}",
             (tid, camera_id, date, self.run_id))
         return cur.fetchone()
 
-    def _frame_gains(self, frame, t, ttl_s=1.0):
-        """Gain can bang uoc tu full frame, cache ~1s (tinh 1 lan/giay)."""
+    def _frame_gains(self, frame, t, ttl_s=30.0):
+        """Cache frame_gains theo thoi gian: 30s cap nhat 1 lan (tranh tinh
+        means tren 320x180 30fps = phi CPU). Tra ve gains (3,) hoac None."""
         try:
-            last = getattr(self, "_gains_t", -1e9)
+            last = getattr(self, "_gains_t", -999.0)
             if t - last > ttl_s:
                 self._gains = frame_gains(frame)
                 self._gains_t = float(t)
@@ -165,21 +172,22 @@ class ObjectStore:
         row = self._row(tid, camera_id, date)
         if row is None:
             # G1: ID moi -> chi ghi khi du chuan conf ngay tu dau.
-            # Track yeu khong ton imwrite/HSV/INSERT; doi frame sau dat
+            # Track yeu khong ton imwrite/K-Means/INSERT; doi frame sau dat
             # chuan thi G1 bat dau tu do (G2 bu lai shot tot hon).
             if conf < MIN_CONF:
                 return False
             crop_path, _, crop_img = self._crop_and_save(frame, bbox, date, tid, 0)
-            color, cconf, _ = dominant_color_robust(
-                crop_img, bbox,
-                self._frame_gains(frame, t))
+            res_colors = dominant_colors_top2(
+                crop_img, gains=self._frame_gains(frame, t))
+            color, cconf = res_colors["dominant"]
+            sec_color, sec_conf = res_colors["secondary"]
             self._db.execute(
                 "INSERT INTO objects (track_id, camera_id, date, run_id, vehicle_type,"
-                " color, color_conf, best_conf, best_bbox, crop_path,"
+                " color, color_conf, secondary_color, secondary_conf, best_conf, best_bbox, crop_path,"
                 " first_seen, last_seen, frames, rewrites) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (tid, camera_id, date, self.run_id, vehicle_type_of(cls), color, cconf,
-                 conf, ",".join(str(v) for v in bbox), crop_path or "",
+                 sec_color, sec_conf, conf, ",".join(str(v) for v in bbox), crop_path or "",
                  t, t, 1, 0))
             return True
         best_conf, best_bbox, rewrites = row
@@ -208,14 +216,16 @@ class ObjectStore:
         crop_path, _, crop_img = self._crop_and_save(frame, bbox, date, tid, rev)
         if crop_path is None or crop_img is None:
             return False
-        color, cconf, _ = dominant_color_robust(
-            crop_img, bbox, self._frame_gains(frame, t))
+        res_colors = dominant_colors_top2(
+            crop_img, gains=self._frame_gains(frame, t))
+        color, cconf = res_colors["dominant"]
+        sec_color, sec_conf = res_colors["secondary"]
         self._db.execute(
             "UPDATE objects SET best_conf=?, best_bbox=?, crop_path=?,"
-            " color=?, color_conf=?, last_seen=?, frames=frames+1,"
-            f" rewrites=? WHERE {self._where_run()}",
+            " color=?, color_conf=?, secondary_color=?, secondary_conf=?,"
+            " last_seen=?, frames=frames+1, rewrites=? WHERE " + self._where_run(),
             (conf, ",".join(str(v) for v in bbox), crop_path, color,
-             cconf, t, rev, tid, camera_id, date, self.run_id))
+             cconf, sec_color, sec_conf, t, rev, tid, camera_id, date, self.run_id))
         return True
 
     def finalize(self, tid, camera_id, date, t):
@@ -281,7 +291,7 @@ class ObjectStore:
         where = ("WHERE " + " AND ".join(conds)) if conds else ""
         cur = self._db.execute(
             "SELECT track_id, camera_id, date, run_id, vehicle_type, color,"
-            " color_conf, best_conf, best_bbox, crop_path, first_seen,"
+            " color_conf, secondary_color, secondary_conf, best_conf, best_bbox, crop_path, first_seen,"
             " last_seen, frames FROM objects "
             f"{where} ORDER BY first_seen LIMIT ?", (*params, int(limit)))
         cols = [d[0] for d in cur.description]
@@ -318,7 +328,7 @@ class ObjectStore:
 
     def close(self):
         try:
-            self._db.commit()
+            self.flush(force=True)
             self._db.close()
         except Exception:
             pass

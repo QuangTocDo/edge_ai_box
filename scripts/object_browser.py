@@ -322,9 +322,11 @@ def api_objects(date: str = Query(""), type: str = Query("", alias="type"),
         cond.append("camera_id=?")
         params.append(camera)
     where = ("WHERE low_quality=0 AND " + " AND ".join(cond)) if cond else "WHERE low_quality=0"
+    cols = [r["name"] if hasattr(r, "keys") else r[1] for r in con.execute("PRAGMA table_info(objects)").fetchall()]
+    sec_cols = "secondary_color, secondary_conf, " if "secondary_color" in cols else ""
     rows = con.execute(
-        "SELECT track_id, camera_id, date, vehicle_type, color, color_conf,"
-        " best_conf, best_bbox, crop_path, first_seen, last_seen, frames "
+        "SELECT track_id, camera_id, date, vehicle_type, color, color_conf, "
+        f"{sec_cols}best_conf, best_bbox, crop_path, first_seen, last_seen, frames "
         f"FROM objects {where} ORDER BY first_seen DESC LIMIT ?", (*params, limit)).fetchall()
     con.close()
     out = []
@@ -1145,9 +1147,13 @@ function renderObjects(rows) {
             <span class="font-mono text-brand-400 font-bold">#${r.track_id}</span>
             <span class="text-slate-400 text-[11px] font-mono">${r.camera_id}</span>
           </div>
-          <div class="flex items-center gap-1.5 mt-1 text-slate-400">
+          <div class="flex items-center gap-1.5 mt-1 text-slate-400 flex-wrap">
             <span class="w-2.5 h-2.5 rounded-full border border-slate-600 inline-block shadow-sm" style="background:${MCOLOR[r.color]||'#475569'}"></span>
             <span class="capitalize font-medium text-slate-300">${r.color}</span>
+            ${r.secondary_color && r.secondary_color !== 'unknown' ? `
+            <span class="text-slate-600 text-xs">/</span>
+            <span class="w-2 h-2 rounded-full border border-slate-600 inline-block shadow-sm" style="background:${MCOLOR[r.secondary_color]||'#475569'}"></span>
+            <span class="capitalize text-xs text-slate-400">${r.secondary_color}</span>` : ''}
             <span class="text-slate-600">·</span>
             <span class="font-mono">${r.frames} frames</span>
           </div>
@@ -1445,7 +1451,8 @@ function openModalByIndex(idx, type) {
     document.getElementById('mTrackId').textContent = `#${item.track_id}`;
     document.getElementById('mCam').textContent = item.camera_id;
     document.getElementById('mTime').textContent = `${item.date} (${Number(item.first_seen).toFixed(1)}s → ${Number(item.last_seen).toFixed(1)}s)`;
-    document.getElementById('mClass').textContent = `${item.vehicle_type} (${item.color})`;
+    const colorLabel = (item.secondary_color && item.secondary_color !== 'unknown') ? `${item.color} / ${item.secondary_color}` : item.color;
+    document.getElementById('mClass').textContent = `${item.vehicle_type} (${colorLabel})`;
     document.getElementById('mConf').textContent = `${Math.round(item.best_conf * 100)}%`;
     document.getElementById('mZone').textContent = 'Lưu thông';
 

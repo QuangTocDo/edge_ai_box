@@ -1,3 +1,4 @@
+from typing import Any, Dict, List, Optional, Tuple
 """Dung Tracker va Secondary Detectors tu model config (seam de test/mock, tranh khoi tao cung trong main)."""
 import logging
 from pathlib import Path
@@ -101,7 +102,8 @@ def create_tracker(mc, imgsz_override=0):
                    classes=mc.get("classes"),
                    tracker_cfg=mc.get("tracker", "ocsort.yaml"),
                    device=mc.get("device"),
-                   names=mc.get("names"))
+                   names=mc.get("names"),
+                   vote_interval=int(mc.get("window_size") or mc.get("vote_interval") or 10))
 
 
 class PedestrianDetector:
@@ -200,8 +202,10 @@ class PedestrianDetector:
         return tracked_dets
 
 
-def create_pedestrian_detector(cfg):
-    """cfg: dict model config cho no_gathering (hoac secondary_models.pedestrian)."""
+def create_pedestrian_detector(cfg, async_mode: bool = True):
+    """cfg: dict model config cho no_gathering (hoac secondary_models.pedestrian).
+    async_mode: Neu True, boc boi AsyncPedestrianDetector de chay worker thread rieng tranh drop FPS.
+    """
     if not cfg:
         return None
     m = cfg.get("model", cfg)
@@ -215,13 +219,108 @@ def create_pedestrian_detector(cfg):
         logging.warning("File model ONNX cho pedestrian khong ton tai: %s (bo qua khoi tao)", wpath)
         return None
     try:
-        return PedestrianDetector(
+        base_det = PedestrianDetector(
             weights=m["weights"],
             conf=m.get("conf", 0.35),
             imgsz=m.get("imgsz", 640),
             device=m.get("device"),
             classes=m.get("classes")
         )
+        return AsyncPedestrianDetector(base_det) if async_mode else base_det
     except Exception as ex:
         logging.exception("Khong the khoi tao PedestrianDetector: %s", ex)
         return None
+
+
+import queue
+import threading
+
+
+class AsyncPedestrianDetector:
+    """Async worker wrapper cho PedestrianDetector su dung worker thread rieng.
+
+    Triet tieu hoan toan hien tuong spike/drop FPS tren main thread khi goi model phu (ONNX)
+    dinh ky de phat hien tu tap dong nguoi.
+    """
+
+    def __init__(self, detector: PedestrianDetector):
+        self.detector = detector
+        self._task_queue: queue.Queue = queue.Queue(maxsize=1)
+        self._lock = threading.Lock()
+        self._latest_result: Optional[Dict[str, Any]] = None
+        self._stopped = False
+        self._worker_thread = threading.Thread(
+            target=self._worker_loop, daemon=True, name="AsyncPedDetectorWorker"
+        )
+        self._worker_thread.start()
+
+    def _worker_loop(self):
+        while not self._stopped:
+            try:
+                task = self._task_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            if task is None or self._stopped:
+                break
+
+            frame_idx, t, wall_min, frame, gathering_entries = task
+            try:
+                poly_results = []
+                all_peds = []
+                for ge in gathering_entries:
+                    poly_obj = ge.get("polygon") or {}
+                    pts = poly_obj.get("polygon") or []
+                    if not pts:
+                        continue
+                    peds_in_poly = self.detector.detect_in_polygon(frame, pts)
+                    all_peds.extend(peds_in_poly)
+                    poly_results.append({
+                        "ge": ge,
+                        "poly_obj": poly_obj,
+                        "peds": peds_in_poly,
+                    })
+
+                with self._lock:
+                    self._latest_result = {
+                        "frame_idx": frame_idx,
+                        "t": t,
+                        "wall_min": wall_min,
+                        "frame": frame,
+                        "all_peds": all_peds,
+                        "poly_results": poly_results,
+                    }
+            except Exception:
+                logging.exception("AsyncPedestrianDetector worker error frame %d", frame_idx)
+            finally:
+                self._task_queue.task_done()
+
+    def submit(self, frame, gathering_entries, frame_idx: int, t: float, wall_min: Optional[int] = None) -> bool:
+        """Submit frame cho worker phan tich khong chan (non-blocking).
+        Neu worker dang ban xu ly frame truoc thi bo qua (drop) de khong tich luy tre.
+        Tra ve True neu submit thanh cong, False neu bi drop.
+        """
+        if self._stopped or not gathering_entries:
+            return False
+        try:
+            frame_copy = frame.copy()
+            self._task_queue.put_nowait((frame_idx, t, wall_min, frame_copy, gathering_entries))
+            return True
+        except queue.Full:
+            return False
+
+    def poll_result(self) -> Optional[Dict[str, Any]]:
+        """Lay ket qua moi nhat tu worker (non-blocking). Tra ve None neu chua co ket qua moi."""
+        with self._lock:
+            res = self._latest_result
+            self._latest_result = None
+            return res
+
+    def stop(self):
+        self._stopped = True
+        try:
+            self._task_queue.put_nowait(None)
+        except Exception:
+            pass
+        if self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=1.0)

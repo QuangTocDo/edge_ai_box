@@ -21,12 +21,16 @@ HEADING_MIN_SPEED_PX = 1.0
 class TrackState:
     """State giu per track_id (rule engine doc, khong phu thuoc tracker ben trong)."""
 
-    def __init__(self, tid, cls, conf, bc):
+    def __init__(self, tid, cls, conf, bc, vote_interval=10):
         self.tid = tid
-        self.cls = cls
+        self.cls = cls           # Class on dinh (Smooth / Displayed Label)
+        self.raw_cls = cls       # Class goc tuc thoi tu detector frame hien tai
         self.conf = conf
         self.pts = deque([bc], maxlen=TRACK_PTS_MAXLEN)  # lich su bottom-center
         self.hits = 1
+        self.window_size = max(1, int(vote_interval))
+        # Sliding window luu (class, confidence) cua W frames gan nhat
+        self.cls_window = deque([(cls, float(conf))], maxlen=self.window_size)
         self.vel = (0.0, 0.0)  # van toc lam muot (px/frame)
         self.heading = None  # goc huong di chuyen (do, quy uoc geometry.heading_deg)
         self.jump_streak = 0  # so frame nhay lien tuc (nghi ID-switch)
@@ -44,6 +48,33 @@ class TrackState:
         self.red: dict[str, Any] | None = None
         self.speed: dict[str, Any] | None = None
 
+    def _apply_class_vote(self, cls, conf):
+        """Confidence-Weighted Sliding Window + Quán tính (Hysteresis) chống rung nhãn bounding box.
+        - Khong ngat quang 10 frame gay cam giac bi delay/dong bang.
+        - Moi frame deu duoc danh gia tren cua so truot W frames gan nhat.
+        - Co che Quan tinh (Hysteresis): Class moi phai vuot troi hon class cu it nhat 25% tong diem
+          tin cay thi moi duoc phep doi nhan, triet tieu 100% hien tuong nhap nhay boi nhieu 1-2 frame.
+        """
+        self.raw_cls = cls
+        self.cls_window.append((cls, float(conf)))
+
+        if self.window_size <= 1:
+            self.cls = cls
+            return
+
+        scores = {}
+        for c, cf in self.cls_window:
+            scores[c] = scores.get(c, 0.0) + cf
+
+        best_cls = max(scores.keys(), key=lambda k: scores[k])
+        if best_cls == self.cls:
+            return
+
+        cur_score = scores.get(self.cls, 0.0)
+        # Chi chuyen sang nhan moi neu nhan cu da roi khoi window hoac nhan moi ap dao >= 25%
+        if cur_score == 0.0 or scores[best_cls] > cur_score * 1.25:
+            self.cls = best_cls
+
     def update(self, cls, conf, bc, bbox, frame_idx, jump_px=None):
         """Cap nhat track. Tra ve True neu buoc nay bi loai la nhay ID-switch."""
         prev = self.pts[-1]
@@ -55,8 +86,9 @@ class TrackState:
         if jump_px is not None and step > jump_px:
             self.jump_streak += 1
             self.pts.append(bc)
-            self.cls, self.conf, self.bbox = cls, conf, bbox
             self.hits += 1
+            self._apply_class_vote(cls, conf)
+            self.conf, self.bbox = conf, bbox
             self.last_frame = frame_idx
             if self.jump_streak < TRACK_JUMP_STREAK:
                 return True
@@ -68,8 +100,9 @@ class TrackState:
         if hd is not None and math.hypot(*self.vel) >= HEADING_MIN_SPEED_PX:
             self.heading = hd
         self.pts.append(bc)
-        self.cls, self.conf, self.bbox = cls, conf, bbox
         self.hits += 1
+        self._apply_class_vote(cls, conf)
+        self.conf, self.bbox = conf, bbox
         self.last_frame = frame_idx
         return False
 
@@ -77,7 +110,8 @@ class TrackState:
 class Tracker:
     def __init__(self, weights="weights/best.pt", conf=0.4, imgsz=640,
                  classes=None, tracker_cfg="ocsort.yaml", device=None,
-                 max_age_frames=TRACK_MAX_AGE_FRAMES, names=None):
+                 max_age_frames=TRACK_MAX_AGE_FRAMES, names=None,
+                 vote_interval=10):
         self.model = YOLO(weights)
         if names:
             self.names = {int(k): str(v) for k, v in names.items()} if isinstance(names, dict) else names
@@ -95,6 +129,7 @@ class Tracker:
         self.tracker_cfg = tracker_cfg
         self.device = device
         self.max_age = max_age_frames
+        self.vote_interval = max(1, int(vote_interval))
         self.tracks = {}  # tid -> TrackState
         self.jump_px = max(TRACK_JUMP_MIN_PX,
                            TRACK_JUMP_PX_RATIO * float(imgsz or 640))
@@ -130,7 +165,7 @@ class Tracker:
                         logging.debug("jump reject tid=%s frame=%d (tong %d)",
                                       tid, frame_idx, self.n_jump_reject)
                 else:
-                    st = TrackState(tid, c, cf, bc)
+                    st = TrackState(tid, c, cf, bc, vote_interval=self.vote_interval)
                     st.bbox = bb
                     st.last_frame = frame_idx
                     self.tracks[tid] = st

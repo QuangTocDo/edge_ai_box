@@ -40,16 +40,23 @@ def deep_merge(base, over):
 
 def load_camera_config(path):
     path = Path(path)
-    cfg = yaml.safe_load(open(path)) or {}
+    with open(path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
     base = cfg.pop("base", None)
     if base:
         bpath = (path.parent / base).resolve()
         if not bpath.exists():
             raise ConfigError(f"Khong thay base config: {bpath}")
-        cfg = deep_merge(yaml.safe_load(open(bpath)) or {}, cfg)
+        with open(bpath, "r", encoding="utf-8") as f:
+            cfg = deep_merge(yaml.safe_load(f) or {}, cfg)
     cfg["_cfg_path"] = str(path.resolve())
+    from .validator import validate_config_schema, ConfigValidationError
+    try:
+        schema_warnings = validate_config_schema(cfg)
+    except ConfigValidationError as e:
+        raise ConfigError(str(e))
     normalize(cfg)
-    warnings = validate(cfg)
+    warnings = schema_warnings + validate(cfg)
     resolve_plan(cfg)
     return cfg, warnings
 
