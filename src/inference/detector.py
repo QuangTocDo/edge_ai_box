@@ -109,14 +109,22 @@ def create_tracker(mc, imgsz_override=0):
 class PedestrianDetector:
     """Secondary detector chuyen biet cho nguoi di bo / tu tap dong nguoi su dung file ONNX rieng."""
 
-    def __init__(self, weights, conf=0.35, imgsz=640, device=None, classes=None):
+    def __init__(self, weights, conf=0.35, imgsz=640, device="cpu", classes=None):
         self.weights = str(weights)
-        self.model = YOLO(self.weights, task="detect")
         self.conf = float(conf)
         self.imgsz = int(imgsz)
-        self.device = device
+        self.device = device or "cpu"
+        self.model = YOLO(self.weights, task="detect")
         self.names = getattr(self.model, "names", {0: "pedestrian"})
         self.tracker = SimplePedTracker()
+
+        # Warmup de ONNX session khoi tao san tren device (CPU) ngay tu setup
+        try:
+            import numpy as np
+            dummy = np.zeros((self.imgsz, self.imgsz, 3), dtype=np.uint8)
+            self.model.predict(dummy, imgsz=self.imgsz, device=self.device, verbose=False)
+        except Exception:
+            pass
 
         # Xac dinh target class IDs: uu tien config classes, neu khong thi tu dong tim person/pedestrian
         if classes is not None:
@@ -219,11 +227,14 @@ def create_pedestrian_detector(cfg, async_mode: bool = True):
         logging.warning("File model ONNX cho pedestrian khong ton tai: %s (bo qua khoi tao)", wpath)
         return None
     try:
+        dev = m.get("device")
+        if dev is None:
+            dev = "cpu"
         base_det = PedestrianDetector(
             weights=m["weights"],
             conf=m.get("conf", 0.35),
             imgsz=m.get("imgsz", 640),
-            device=m.get("device"),
+            device=dev,
             classes=m.get("classes")
         )
         return AsyncPedestrianDetector(base_det) if async_mode else base_det

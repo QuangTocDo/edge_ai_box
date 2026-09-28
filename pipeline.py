@@ -49,7 +49,6 @@ def parse_args():
 
     return ap.parse_args()
 
-
 def main():
     global GLOBAL_ENGINE
     args = parse_args()

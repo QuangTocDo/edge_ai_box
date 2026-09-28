@@ -98,6 +98,9 @@ class TrafficPipelineEngine:
         max_frames: int = 0,
         imgsz_override: int = 0,
         debug_rules: bool = False,
+        fps: Optional[float] = None,
+        frame_size: Optional[Tuple[int, int]] = None,
+        **kwargs: Any,
     ):
         self.config_path = config_path
         self.source_override = source_override
@@ -116,7 +119,9 @@ class TrafficPipelineEngine:
         self.tz: str = "Asia/Ho_Chi_Minh"
         self.heartbeat_file: str = ""
         self.cap = None
-        self.fps_src: float = 30.0
+        self._fps_given = fps is not None
+        self.fps_src: float = float(fps) if fps is not None else 30.0
+        self.frame_size = frame_size
         self.writer = None
 
         self.tracker = None
@@ -195,16 +200,17 @@ class TrafficPipelineEngine:
             logging.info("Khoi tao AsyncStreamReader (chong tre buffer RTSP) cho %s", _mask_source(src))
             self.cap = AsyncStreamReader(src, reconnect_fn=_open_capture, should_stop=lambda: self.stopped)
             if not self.cap.isOpened():
-                raise SystemExit(f"[INPUT SRC] Khong mo duoc stream ({src_from}): {_mask_source(src)}")
+                raise RuntimeError(f"[INPUT SRC] Khong mo duoc stream ({src_from}): {_mask_source(src)}")
         else:
             self.cap = _open_capture(src)
             if self.cap is None:
-                raise SystemExit(
+                raise RuntimeError(
                     f"[INPUT SRC] Khong mo duoc ({src_from}): {_mask_source(src)} "
                     "(video can mount ./assets, RTSP can mang + dung pass)"
                 )
 
-        self.fps_src = self.cap.get(cv2.CAP_PROP_FPS) or 30.0
+        if not self._fps_given and self.cap is not None:
+            self.fps_src = self.cap.get(cv2.CAP_PROP_FPS) or 30.0
         logging.info("Mo INPUT SRC OK (%s): %s (fps~%.1f)", src_from, _mask_source(src), self.fps_src)
 
         # Main Tracker & Detector
