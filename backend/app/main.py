@@ -40,12 +40,28 @@ def _recover_orphaned_jobs() -> None:
         enqueue_job(job_id)
 
 
+def _start_enabled_cameras() -> None:
+    """Start workers for any cameras configured as enabled in the database."""
+    import logging
+    from sqlalchemy import select
+    from .models import Camera
+
+    with SessionLocal() as db:
+        cameras = db.scalars(select(Camera).where(Camera.enabled == True)).all()
+        for cam in cameras:
+            try:
+                registry.start(cam)
+            except Exception as e:
+                logging.error("Failed to auto-start camera %s: %s", cam.id, e)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_data_dirs()
     Base.metadata.create_all(bind=engine)
     manager.set_loop(asyncio.get_running_loop())
     _recover_orphaned_jobs()
+    _start_enabled_cameras()
     yield
     # Stop all live camera workers on shutdown so capture/inference threads and
     # VideoCapture handles are released cleanly.

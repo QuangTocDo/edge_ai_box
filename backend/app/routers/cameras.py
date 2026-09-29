@@ -837,7 +837,10 @@ def camera_stream(camera_id: str, db: Session = Depends(get_db)):
     camera = require_camera(camera_id, db)
     worker = registry.get(camera_id)
     if worker is None or not worker.is_running():
-        raise HTTPException(status_code=409, detail="Camera is not running. Start it first.")
+        if camera.enabled:
+            worker = registry.start(camera)
+        else:
+            raise HTTPException(status_code=409, detail="Camera is not running. Start it first.")
 
     boundary = "frame"
 
