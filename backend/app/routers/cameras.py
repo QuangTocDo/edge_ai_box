@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import json
 import math
 import shutil
@@ -51,19 +53,10 @@ def _compute_homography(src_pts, dst_pts):
 
 
 def _write_camera_config(camera_id: str, calibrated: bool) -> Path:
-    cam_dir = _camera_dir(camera_id)
-    cam_dir.mkdir(parents=True, exist_ok=True)
-    config_path = cam_dir / "config.yaml"
-
-    if VISION_CONFIG_PATH.exists():
-        with open(VISION_CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-    else:
-        cfg = {}
-
-    cfg["camera_id"] = camera_id
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(cfg, f, default_flow_style=False)
+    config_path = VISION_CONFIG_PATH
+    if not config_path.exists():
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump({"camera_id": camera_id}, f, default_flow_style=False)
     return config_path
 
 
@@ -225,7 +218,7 @@ def delete_camera(camera_id: str, db: Session = Depends(get_db)):
 @router.get("/{camera_id}/config")
 def get_camera_config(camera_id: str, db: Session = Depends(get_db)):
     camera = require_camera(camera_id, db)
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
     if not config_path.exists():
         return {
             "camera_id": camera_id,
@@ -258,7 +251,7 @@ def get_camera_config(camera_id: str, db: Session = Depends(get_db)):
 def update_raw_config(camera_id: str, payload: RawConfigRequest, db: Session = Depends(get_db)):
     """Cho phep sua va luu truc tiep file active.yaml tu Dashboard."""
     camera = require_camera(camera_id, db)
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
 
     # 1. Kiem tra cu phap YAML
     try:
@@ -292,7 +285,7 @@ def update_raw_config(camera_id: str, payload: RawConfigRequest, db: Session = D
 def delete_camera_polygon(camera_id: str, polygon_id: str, db: Session = Depends(get_db)):
     """Xoa truc tiep 1 polygon khoi active.yaml."""
     camera = require_camera(camera_id, db)
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
 
@@ -321,7 +314,7 @@ def delete_camera_polygon(camera_id: str, polygon_id: str, db: Session = Depends
 def save_camera_polygon(camera_id: str, poly: dict = Body(...), db: Session = Depends(get_db)):
     """Ghi truc tiep 1 polygon vao active.yaml tuong tu nhu draw_lines.py."""
     camera = require_camera(camera_id, db)
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
 
@@ -385,7 +378,7 @@ def save_camera_polygon(camera_id: str, poly: dict = Body(...), db: Session = De
 def save_camera_line(camera_id: str, line: dict = Body(...), db: Session = Depends(get_db)):
     """Ghi truc tiep 1 vach ke vao active.yaml tuong tu nhu draw_lines.py."""
     camera = require_camera(camera_id, db)
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
 
@@ -425,7 +418,7 @@ def save_camera_line(camera_id: str, line: dict = Body(...), db: Session = Depen
 def save_camera_signal(camera_id: str, sig: dict = Body(...), db: Session = Depends(get_db)):
     """Ghi truc tiep hop den tin hieu vao active.yaml tuong tu nhu draw_lines.py."""
     camera = require_camera(camera_id, db)
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
 
@@ -463,7 +456,7 @@ def save_camera_signal(camera_id: str, sig: dict = Body(...), db: Session = Depe
 def delete_camera_signal(camera_id: str, signal_id: str, db: Session = Depends(get_db)):
     """Xoa truc tiep 1 hop den tin hieu khoi active.yaml."""
     camera = require_camera(camera_id, db)
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
 
@@ -492,7 +485,7 @@ def delete_camera_signal(camera_id: str, signal_id: str, db: Session = Depends(g
 def delete_camera_line(camera_id: str, line_id: str, db: Session = Depends(get_db)):
     """Xoa truc tiep 1 vach ke khoi active.yaml."""
     camera = require_camera(camera_id, db)
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
 
@@ -614,7 +607,7 @@ def homography_preview(camera_id: str, rect: CalibrationRectangle, db: Session =
 def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = Depends(get_db)):
     camera = require_camera(camera_id, db)
 
-    config_path = Path(camera.config_path)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
     if config_path.exists():
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
@@ -833,34 +826,40 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
 # --- MJPEG stream ----------------------------------------------------------
 
 @router.get("/{camera_id}/stream")
-def camera_stream(camera_id: str, db: Session = Depends(get_db)):
+async def camera_stream(camera_id: str, db: Session = Depends(get_db)):
     camera = require_camera(camera_id, db)
     worker = registry.get(camera_id)
     if worker is None or not worker.is_running():
-        if camera.enabled:
-            worker = registry.start(camera)
-        else:
-            raise HTTPException(status_code=409, detail="Camera is not running. Start it first.")
+        raise HTTPException(status_code=409, detail="Camera is not running. Start it first.")
 
     boundary = "frame"
 
-    def generate():
-        while True:
-            jpeg = worker.get_latest_jpeg()
-            if jpeg is not None:
-                yield (
-                    b"--" + boundary.encode() + b"\r\n"
-                    b"Content-Type: image/jpeg\r\n"
-                    b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n"
-                    + jpeg
-                    + b"\r\n"
-                )
-            time.sleep(0.066)
+    async def generate():
+        last_frame = None
+        try:
+            while worker.is_running():
+                jpeg = worker.get_latest_jpeg()
+                if jpeg is not None and (last_frame is None or jpeg != last_frame):
+                    last_frame = jpeg
+                    yield (
+                        b"--" + boundary.encode() + b"\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n"
+                        + jpeg
+                        + b"\r\n"
+                    )
+                await asyncio.sleep(0.033)
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
 
     return StreamingResponse(
         generate(),
         media_type=f"multipart/x-mixed-replace; boundary={boundary}",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "close",
+        },
     )
 
 

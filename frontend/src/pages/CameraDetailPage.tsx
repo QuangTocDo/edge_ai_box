@@ -56,7 +56,7 @@ export function CameraDetailPage() {
         action === "start" ? api.startCamera : action === "stop" ? api.stopCamera : api.reconnectCamera;
       const updated = await fn(cameraId);
       setCamera(updated);
-      setStreamKey((k) => k + 1);
+      setTimeout(() => setStreamKey((k) => k + 1), 500);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -108,7 +108,10 @@ export function CameraDetailPage() {
               key={streamKey}
               src={`${cameraStreamUrl(camera.id)}?t=${streamKey}`}
               alt="Live annotated feed"
-              style={{ width: "100%", borderRadius: 8, background: "#000" }}
+              style={{ width: "100%", borderRadius: 8, background: "#000", display: "block" }}
+              onError={() => {
+                setTimeout(() => setStreamKey((k) => k + 1), 1000);
+              }}
             />
           ) : (
             <EmptyState title="Stream offline" body="Start the camera to view the live annotated feed." />
