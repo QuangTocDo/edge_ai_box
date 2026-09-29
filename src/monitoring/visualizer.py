@@ -101,6 +101,14 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
 
 
 
+        # Ve mui ten huong luu thong neu co road_dir
+        road_dir = p.get("road_dir")
+        if road_dir and len(road_dir) == 2:
+            cx = sum(x for x, y in pts) // len(pts)
+            cy = sum(y for x, y in pts) // len(pts)
+            dx, dy = int(road_dir[0] * 50), int(road_dir[1] * 50)
+            cv2.arrowedLine(img, (cx, cy), (cx + dx, cy + dy), col, 2, cv2.LINE_AA, tipLength=0.35)
+
         # Nhan dan vung da giac
         poly_label = pid
         if g_status:
@@ -189,11 +197,17 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
         # Hien thi van toc neu co
         spd = getattr(st, "speed", None)
         if spd is not None and spd.get("hist"):
-            lim = float(spd.get("limit", 50.0))
-            stxt = f"{spd.get('smooth', 0.0):.0f} km/h"
-            scol = (0, 0, 255) if spd.get('smooth', 0.0) > lim else (255, 255, 255)
-            cv2.putText(img, stxt, (x1, y2 + 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, scol, 2)
+            v = spd.get("smooth") or spd.get("last") or 0.0
+            if v > 0.0:
+                lim = float(spd.get("limit", 50.0))
+                stxt = f"{v:.0f} km/h"
+                is_over = v > lim
+                scol = (0, 0, 255) if is_over else (0, 255, 128)
+                (tw, th), _ = cv2.getTextSize(stxt, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+                cv2.rectangle(img, (x1, y2 + 4), (x1 + tw + 8, y2 + th + 10), (15, 23, 42), -1)
+                cv2.rectangle(img, (x1, y2 + 4), (x1 + tw + 8, y2 + th + 10), scol, 1, cv2.LINE_AA)
+                cv2.putText(img, stxt, (x1 + 4, y2 + th + 6),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.65, scol, 2, cv2.LINE_AA)
 
     # 4b. Ve nguoi di bo (giu nguyen label ped, kem id neu co, khong doi label khi vao vung)
     for p in (pedestrians or []):
