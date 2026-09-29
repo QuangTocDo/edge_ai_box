@@ -235,16 +235,24 @@ export function CalibratePage() {
           }
           const spLimit = speedPoly.rules?.speeding?.limit_kmh || speedPoly.rules?.speeding?.speed_limit_kmh;
           if (spLimit) setSpeedLimit(spLimit);
-          if (speedPoly.road_dir && speedPoly.road_dir.length === 2 && speedPoly.homography?.src?.length === 4) {
+          if (speedPoly.road_dir_points && speedPoly.road_dir_points.length === 2) {
+            setSpeedRoadDirPts(speedPoly.road_dir_points);
+          } else if (speedPoly.road_dir && speedPoly.road_dir.length === 2 && speedPoly.homography?.src?.length === 4) {
             const src = speedPoly.homography.src;
-            const cx = src.reduce((s: number, p: number[]) => s + p[0], 0) / 4;
-            const cy = src.reduce((s: number, p: number[]) => s + p[1], 0) / 4;
-            const dx = speedPoly.road_dir[0];
-            const dy = speedPoly.road_dir[1];
-            setSpeedRoadDirPts([
-              [Math.round(cx - dx * 80), Math.round(cy - dy * 80)],
-              [Math.round(cx + dx * 80), Math.round(cy + dy * 80)],
-            ]);
+            const sortedByY = [...src].sort((a: number[], b: number[]) => b[1] - a[1]);
+            const nearMid = [(sortedByY[0][0] + sortedByY[1][0]) / 2, (sortedByY[0][1] + sortedByY[1][1]) / 2];
+            const farMid = [(sortedByY[2][0] + sortedByY[3][0]) / 2, (sortedByY[2][1] + sortedByY[3][1]) / 2];
+            if (speedPoly.road_dir[1] >= 0) {
+              setSpeedRoadDirPts([
+                [Math.round(nearMid[0]), Math.round(nearMid[1])],
+                [Math.round(farMid[0]), Math.round(farMid[1])],
+              ]);
+            } else {
+              setSpeedRoadDirPts([
+                [Math.round(farMid[0]), Math.round(farMid[1])],
+                [Math.round(nearMid[0]), Math.round(nearMid[1])],
+              ]);
+            }
           }
         }
 
@@ -353,7 +361,11 @@ export function CalibratePage() {
   const addPoint = useCallback(
     (p: number[]) => {
       if (activeRule === "speeding") {
-        setRectPts((v) => (v.length >= 4 ? v : [...v, p]));
+        if (speedSubMode === "road_dir") {
+          setSpeedRoadDirPts((v) => (v.length >= 2 ? [p] : [...v, p]));
+        } else {
+          setRectPts((v) => (v.length >= 4 ? v : [...v, p]));
+        }
       } else if (activeRule === "red_light") {
         if (drawSubMode === "stop") {
           setStopPts((v) => (v.length >= 2 ? v : [...v, p]));
@@ -373,7 +385,7 @@ export function CalibratePage() {
         setDraftPoly((v) => [...v, p]);
       }
     },
-    [activeRule, drawSubMode]
+    [activeRule, drawSubMode, speedSubMode]
   );
 
   function onSvgClick(e: React.MouseEvent) {
@@ -502,9 +514,13 @@ export function CalibratePage() {
 
   function autoCalculateSpeedRoadDir() {
     if (rectPts.length !== 4) return;
-    const tm = [(rectPts[0][0] + rectPts[1][0]) / 2, (rectPts[0][1] + rectPts[1][1]) / 2];
-    const bm = [(rectPts[3][0] + rectPts[2][0]) / 2, (rectPts[3][1] + rectPts[2][1]) / 2];
-    setSpeedRoadDirPts([[Math.round(tm[0]), Math.round(tm[1])], [Math.round(bm[0]), Math.round(bm[1])]]);
+    const sortedByY = [...rectPts].sort((a, b) => b[1] - a[1]);
+    const nearMid = [(sortedByY[0][0] + sortedByY[1][0]) / 2, (sortedByY[0][1] + sortedByY[1][1]) / 2];
+    const farMid = [(sortedByY[2][0] + sortedByY[3][0]) / 2, (sortedByY[2][1] + sortedByY[3][1]) / 2];
+    setSpeedRoadDirPts([
+      [Math.round(nearMid[0]), Math.round(nearMid[1])],
+      [Math.round(farMid[0]), Math.round(farMid[1])],
+    ]);
   }
 
   async function saveSpeedingZone() {
@@ -522,7 +538,6 @@ export function CalibratePage() {
       id: "POLY_1",
       kind: "directional",
       polygon: rectPts,
-      road_dir: [0.0, 1.0],
       road_dir_points: speedRoadDirPts.length === 2 ? speedRoadDirPts : undefined,
       rules: {
         speeding: {

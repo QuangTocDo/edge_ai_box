@@ -329,7 +329,7 @@ def save_camera_polygon(camera_id: str, poly: dict = Body(...), db: Session = De
         dst = poly["homography"]["dst"]
         try:
             H_mat, inliers, reproj_err = build_H(src, dst)
-            r_pts = poly.pop("road_dir_points", None)
+            r_pts = poly.get("road_dir_points")
             if r_pts and len(r_pts) == 2:
                 xa, ya = pixel_to_road(H_mat, r_pts[0][0], r_pts[0][1])
                 xb, yb = pixel_to_road(H_mat, r_pts[1][0], r_pts[1][1])
@@ -660,13 +660,15 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                     "measured_at": datetime.now().isoformat(),
                 }
                 p["road_dir"] = speed_rdir
+                if payload.rectangle.road_dir_points:
+                    p["road_dir_points"] = payload.rectangle.road_dir_points
                 if not p.get("polygon"):
                     p["polygon"] = payload.rectangle.image_points
                 p.setdefault("rules", {})["speeding"] = {"enable": True}
                 poly_found = True
                 break
         if not poly_found:
-            polygons.append({
+            new_p = {
                 "id": "POLY_1",
                 "kind": "directional",
                 "polygon": payload.rectangle.image_points,
@@ -677,7 +679,10 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                     "dst": world,
                     "measured_at": datetime.now().isoformat(),
                 },
-            })
+            }
+            if payload.rectangle.road_dir_points:
+                new_p["road_dir_points"] = payload.rectangle.road_dir_points
+            polygons.append(new_p)
 
     # 2. Stop Line
     if payload.stop_line and len(payload.stop_line) == 2:
