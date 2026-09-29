@@ -99,13 +99,7 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
         for a, b in zip(pts, pts[1:] + pts[:1]):
             cv2.line(img, a, b, col, thick, cv2.LINE_AA)
 
-        # Ve mui ten huong luu thong neu co road_dir
-        road_dir = p.get("road_dir")
-        if road_dir and len(road_dir) == 2:
-            cx = sum(x for x, y in pts) // len(pts)
-            cy = sum(y for x, y in pts) // len(pts)
-            dx, dy = int(road_dir[0] * 50), int(road_dir[1] * 50)
-            cv2.arrowedLine(img, (cx, cy), (cx + dx, cy + dy), col, 2, cv2.LINE_AA, tipLength=0.35)
+
 
         # Nhan dan vung da giac
         poly_label = pid

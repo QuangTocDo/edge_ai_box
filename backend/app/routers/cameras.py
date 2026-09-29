@@ -352,6 +352,8 @@ def save_camera_polygon(camera_id: str, poly: dict = Body(...), db: Session = De
         pid = f"POLY_{idx}"
         poly["id"] = pid
 
+
+
     existing = next((p for p in polygons if isinstance(p, dict) and p.get("id") == pid), None)
     if existing:
         idx = polygons.index(existing)
@@ -403,6 +405,8 @@ def save_camera_line(camera_id: str, line: dict = Body(...), db: Session = Depen
         lines.append(line)
 
     cfg["lines"] = lines
+    if any(isinstance(l, dict) and l.get("allowed_sign") is not None for l in lines):
+        cfg.setdefault("wrong_way", {})["enable"] = True
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f, default_flow_style=False)
 
@@ -684,6 +688,19 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                 new_p["road_dir_points"] = payload.rectangle.road_dir_points
             polygons.append(new_p)
 
+    # 2. Lines (Directed wrong_way lines and other lines)
+    if payload.lines is not None:
+        for ln in payload.lines:
+            lid = ln.get("id")
+            if not lid or lid == "STOP_1":
+                continue
+            existing = next((l for l in lines if isinstance(l, dict) and l.get("id") == lid), None)
+            if existing:
+                idx = lines.index(existing)
+                lines[idx] = ln
+            else:
+                lines.append(ln)
+
     # 2. Stop Line
     if payload.stop_line and len(payload.stop_line) == 2:
         stop_line_item = {
@@ -837,6 +854,8 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
 
     config["polygons"] = polygons
     config["lines"] = lines
+    if any(isinstance(l, dict) and l.get("allowed_sign") is not None for l in lines):
+        config.setdefault("wrong_way", {})["enable"] = True
     if signals:
         config["signals"] = signals
 

@@ -106,7 +106,7 @@ class SpeedingRule(BaseRule):
         dt = t - t0
         if dt <= EPS:
             return None
-        if self.measure == "longitudinal":
+        if self.measure == "longitudinal" and road_dir:
             dist_m = longitudinal_dist((X0, Y0), (X, Y), road_dir)
         else:
             dist_m = math.hypot(X - X0, Y - Y0)

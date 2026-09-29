@@ -135,6 +135,7 @@ class CalibrationRequest(BaseModel):
     rule_zones: Optional[List[RuleZoneConfig]] = None
     deleted_polygon_ids: Optional[List[str]] = None
     deleted_line_ids: Optional[List[str]] = None
+    lines: Optional[List[Dict[str, Any]]] = None
     deleted_signal_ids: Optional[List[str]] = None
 
 

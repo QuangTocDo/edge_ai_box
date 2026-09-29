@@ -200,6 +200,7 @@ export interface CalibrationRequest {
   stop_line?: number[][];
   lanes?: CalibrationLane[];
   light_box?: number[] | null;
+  lines?: Array<{ id: string; p1: number[]; p2: number[]; allowed_sign?: number; role?: string; signal_id?: string }>;
   rule_zones?: RuleZoneConfig[];
   deleted_polygon_ids?: string[];
   deleted_line_ids?: string[];

@@ -190,10 +190,6 @@ def _build_polygon_H(cfg, poly):
         raise ConfigError(
             f"{pid}: speeding can 'homography: {{src: [...], dst: [...]}}' "
             "toi thieu 4 cap diem (xem tool hieu chuan phim c)")
-    if not poly.get("road_dir"):
-        raise ConfigError(
-            f"{pid}: speeding can 'road_dir: [dx, dy]' vector chi huong xe chay "
-            "(nhan phim R trong tool hieu chuan hoac ve huong duong tren Dashboard)")
     try:
         H, inl, err = build_H(src, dst)
     except ValueError as e:
@@ -207,7 +203,8 @@ def _build_polygon_H(cfg, poly):
         raise ConfigError(
             f"{pid}: homography reproj error {err:.2f}m > {max_err:.2f}m, "
             "chup lai diem calibration")
-    return H, err, list(poly["road_dir"])
+    rdir = poly.get("road_dir") or [0.0, 1.0]
+    return H, err, list(rdir)
 
 
 def validate(cfg):
