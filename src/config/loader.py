@@ -379,7 +379,7 @@ def resolve_plan(cfg):
                              "params": effective_params(cfg, p, rule),
                              "lines": [], "pairs": []})
             elif rule == "speeding":
-                if p["id"] == IMPLICIT_ID or (p.get("_H") is None and p.get("_spline") is None):
+                if p["id"] == IMPLICIT_ID or p.get("_H") is None:
                     continue
                 plan.append({"polygon": p, "rule": rule,
                              "params": effective_params(cfg, p, rule),

@@ -101,20 +101,6 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
 
 
 
-        # Ve tim duong cong Spline (neu co)
-        cl = p.get("centerline") or {}
-        cl_pts = cl.get("points") or []
-        if len(cl_pts) >= 2:
-            spline = p.get("_spline")
-            if spline is not None and hasattr(spline, "dense_points"):
-                d_pts = [(int(pt[0]), int(pt[1])) for pt in spline.dense_points]
-            else:
-                d_pts = [(int(pt[0]), int(pt[1])) for pt in cl_pts]
-            for da, db in zip(d_pts[:-1], d_pts[1:]):
-                cv2.line(img, da, db, (239, 70, 217), 2, cv2.LINE_AA)
-            for cpt in cl_pts:
-                cv2.circle(img, (int(cpt[0]), int(cpt[1])), 4, (239, 70, 217), -1)
-
         # Nhan dan vung da giac
         poly_label = pid
         if g_status:
@@ -203,17 +189,11 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
         # Hien thi van toc neu co
         spd = getattr(st, "speed", None)
         if spd is not None and spd.get("hist"):
-            v = spd.get("smooth") or spd.get("last") or 0.0
-            if v > 0.0:
-                lim = float(spd.get("limit", 50.0))
-                stxt = f"{v:.0f} km/h"
-                is_over = v > lim
-                scol = (0, 0, 255) if is_over else (0, 255, 128)
-                (tw, th), _ = cv2.getTextSize(stxt, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
-                cv2.rectangle(img, (x1, y2 + 4), (x1 + tw + 8, y2 + th + 10), (15, 23, 42), -1)
-                cv2.rectangle(img, (x1, y2 + 4), (x1 + tw + 8, y2 + th + 10), scol, 1, cv2.LINE_AA)
-                cv2.putText(img, stxt, (x1 + 4, y2 + th + 6),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.65, scol, 2, cv2.LINE_AA)
+            lim = float(spd.get("limit", 50.0))
+            stxt = f"{spd.get('smooth', 0.0):.0f} km/h"
+            scol = (0, 0, 255) if spd.get('smooth', 0.0) > lim else (255, 255, 255)
+            cv2.putText(img, stxt, (x1, y2 + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, scol, 2)
 
     # 4b. Ve nguoi di bo (giu nguyen label ped, kem id neu co, khong doi label khi vao vung)
     for p in (pedestrians or []):
