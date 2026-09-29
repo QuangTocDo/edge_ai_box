@@ -310,7 +310,9 @@ export function CalibratePage() {
 
           if (matchedRule) {
             let arrow: number[][] | undefined = undefined;
-            if (p.road_dir && p.road_dir.length === 2) {
+            if (p.road_dir_points && p.road_dir_points.length === 2) {
+              arrow = p.road_dir_points;
+            } else if (p.road_dir && p.road_dir.length === 2) {
               const cx = p.polygon.reduce((sum, pt) => sum + pt[0], 0) / p.polygon.length;
               const cy = p.polygon.reduce((sum, pt) => sum + pt[1], 0) / p.polygon.length;
               arrow = [
@@ -357,38 +359,7 @@ export function CalibratePage() {
         .then(setPreview)
         .catch(() => setPreview(null));
     }, 250);
-    function getRuleBadge(key: RuleKey) {
-    if (key === "speeding") {
-      if (rectPts.length === 4) {
-        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    if (key === "red_light") {
-      const hasStop = stopPts.length === 2;
-      const hasLight = lightPts.length === 2;
-      if (hasStop && hasLight) {
-        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-      }
-      if (hasStop) {
-        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    if (key === "lines") {
-      if (existingLines.length > 0) {
-        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    const count = customZones.filter((z) => z.rule_type === key).length;
-    if (count > 0) {
-      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-    }
-    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-  }
-
-  return () => clearTimeout(t);
+    return () => clearTimeout(t);
   }, [rectPts, widthM, lengthM, cameraId]);
 
   const addPoint = useCallback(
@@ -507,11 +478,15 @@ export function CalibratePage() {
       const dx = draftArrow[1][0] - draftArrow[0][0];
       const dy = draftArrow[1][1] - draftArrow[0][1];
       const mag = Math.hypot(dx, dy) || 1;
-      polyPayload.road_dir = [Math.round((dx / mag) * 100) / 100, Math.round((dy / mag) * 100) / 100];
+      const unitDx = Math.round((dx / mag) * 1000) / 1000;
+      const unitDy = Math.round((dy / mag) * 1000) / 1000;
+      polyPayload.road_dir = [unitDx, unitDy];
+      polyPayload.road_dir_points = draftArrow;
       const mx = (draftArrow[0][0] + draftArrow[1][0]) / 2;
       const my = (draftArrow[0][1] + draftArrow[1][1]) / 2;
-      const px = -dy / mag;
-      const py = dx / mag;
+      // Perpendicular vector for allowed_vec(p1, p2, 1) = [unitDx, unitDy]:
+      const px = dy / mag;
+      const py = -dx / mag;
       polyPayload.lines = [{
         id: `LINE_${zoneId}`,
         p1: [Math.round(mx - px * 60), Math.round(my - py * 60)],
@@ -1175,38 +1150,7 @@ export function CalibratePage() {
                       ? `${ln.id} [med]`
                       : `${ln.id} ${sign >= 0 ? "+1" : "-1"}${ln.signal_id ? ` [${ln.signal_id}]` : ""}`;
                     const arr = !isDivider ? computeAllowedVec(ln.p1, ln.p2, sign, 50) : null;
-                    function getRuleBadge(key: RuleKey) {
-    if (key === "speeding") {
-      if (rectPts.length === 4) {
-        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    if (key === "red_light") {
-      const hasStop = stopPts.length === 2;
-      const hasLight = lightPts.length === 2;
-      if (hasStop && hasLight) {
-        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-      }
-      if (hasStop) {
-        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    if (key === "lines") {
-      if (existingLines.length > 0) {
-        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    const count = customZones.filter((z) => z.rule_type === key).length;
-    if (count > 0) {
-      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-    }
-    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-  }
-
-  return (
+                    return (
                       <g key={`existing-line-${ln.id}`}>
                         <line
                           x1={ln.p1[0]}
@@ -1246,38 +1190,7 @@ export function CalibratePage() {
                     const y1 = Math.min(s.roi[1], s.roi[3]);
                     const w = Math.abs(s.roi[2] - s.roi[0]);
                     const h = Math.abs(s.roi[3] - s.roi[1]);
-                    function getRuleBadge(key: RuleKey) {
-    if (key === "speeding") {
-      if (rectPts.length === 4) {
-        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    if (key === "red_light") {
-      const hasStop = stopPts.length === 2;
-      const hasLight = lightPts.length === 2;
-      if (hasStop && hasLight) {
-        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-      }
-      if (hasStop) {
-        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    if (key === "lines") {
-      if (existingLines.length > 0) {
-        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    const count = customZones.filter((z) => z.rule_type === key).length;
-    if (count > 0) {
-      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-    }
-    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-  }
-
-  return (
+                    return (
                       <g key={`existing-sig-${s.id}`}>
                         <rect
                           x={x1}
@@ -1301,38 +1214,7 @@ export function CalibratePage() {
                     const meta = RULE_METAS.find((m) => m.key === z.rule_type);
                     const strokeCol = meta?.color || "#06b6d4";
                     const fillCol = meta?.fill || "rgba(6, 182, 212, 0.18)";
-                    function getRuleBadge(key: RuleKey) {
-    if (key === "speeding") {
-      if (rectPts.length === 4) {
-        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    if (key === "red_light") {
-      const hasStop = stopPts.length === 2;
-      const hasLight = lightPts.length === 2;
-      if (hasStop && hasLight) {
-        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-      }
-      if (hasStop) {
-        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    if (key === "lines") {
-      if (existingLines.length > 0) {
-        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
-      }
-      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-    }
-    const count = customZones.filter((z) => z.rule_type === key).length;
-    if (count > 0) {
-      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
-    }
-    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
-  }
-
-  return (
+                    return (
                       <g key={`zone-${z.id}`}>
                         <polygon
                           points={z.polygon.map((p) => p.join(",")).join(" ")}
@@ -1463,9 +1345,7 @@ export function CalibratePage() {
                     type="button"
                     className="calib-accordion-header"
                     onClick={() => {
-                      if (isOpen) {
-                        // Allow clicking to keep open
-                      } else {
+                      if (!isOpen) {
                         setActiveRule(m.key);
                         setDraftPoly([]);
                         setDraftArrow([]);

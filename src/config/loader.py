@@ -139,7 +139,7 @@ def normalize(cfg):
                 cx = sum(pt[0] for pt in poly_pts) / len(poly_pts)
                 cy = sum(pt[1] for pt in poly_pts) / len(poly_pts)
                 dx, dy = float(p["road_dir"][0]), float(p["road_dir"][1])
-                px, py = -dy, dx
+                px, py = dy, -dx
                 span = 80.0
                 p1 = [round(cx - px * span, 1), round(cy - py * span, 1)]
                 p2 = [round(cx + px * span, 1), round(cy + py * span, 1)]
@@ -456,6 +456,12 @@ def entries_for(bc, plan, containing_fn, track=None):
                 elids = {ln.get("id") for ln in e.get("lines", [])}
                 if any(lid in elids for lid, c in rs.get("cands", {}).items() if not c.get("fired")) or \
                    any(lid in elids for lid, c in rs.get("stops", {}).items() if not c.get("fired")):
+                    out.append(e)
+                    continue
+            rev = getattr(track, "reverse", None)
+            if rev:
+                elids = {ln.get("id") for ln in e.get("lines", [])}
+                if any(lid in elids for lid in rev):
                     out.append(e)
                     continue
     return out

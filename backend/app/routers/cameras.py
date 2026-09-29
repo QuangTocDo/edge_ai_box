@@ -712,23 +712,40 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
     elif payload.deleted_signal_ids and "SIGNAL_1" in payload.deleted_signal_ids:
         signals = [s for s in signals if s.get("id") != "SIGNAL_1"]
 
-    # 4. Lanes
+    # 4. Lanes (Wrong way)
     if payload.lanes:
         for idx, lane in enumerate(payload.lanes):
             lane_id = lane.id or f"LANE_{idx + 1}"
             road_dir = None
+            road_dir_points = None
+            lines_for_poly = []
             if lane.arrow and len(lane.arrow) == 2:
                 dx = lane.arrow[1][0] - lane.arrow[0][0]
                 dy = lane.arrow[1][1] - lane.arrow[0][1]
                 mag = math.hypot(dx, dy)
                 if mag > 0:
                     road_dir = [float(dx / mag), float(dy / mag)]
+                    road_dir_points = lane.arrow
+                    mx = (lane.arrow[0][0] + lane.arrow[1][0]) / 2.0
+                    my = (lane.arrow[0][1] + lane.arrow[1][1]) / 2.0
+                    px, py = dy / mag, -dx / mag
+                    span = 80.0
+                    lines_for_poly.append({
+                        "id": f"LINE_{lane_id}",
+                        "p1": [round(mx - px * span, 1), round(my - py * span, 1)],
+                        "p2": [round(mx + px * span, 1), round(my + py * span, 1)],
+                        "allowed_sign": 1,
+                    })
 
             existing = next((p for p in polygons if p.get("id") == lane_id), None)
             if existing:
                 existing["polygon"] = lane.polygon
                 if road_dir:
                     existing["road_dir"] = road_dir
+                if road_dir_points:
+                    existing["road_dir_points"] = road_dir_points
+                if lines_for_poly:
+                    existing["lines"] = lines_for_poly
                 existing.setdefault("rules", {})["wrong_way"] = {"enable": True}
             else:
                 p_item = {
@@ -739,6 +756,10 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                 }
                 if road_dir:
                     p_item["road_dir"] = road_dir
+                if road_dir_points:
+                    p_item["road_dir_points"] = road_dir_points
+                if lines_for_poly:
+                    p_item["lines"] = lines_for_poly
                 polygons.append(p_item)
 
     # 5. Rule Zones (speeding, wrong_way, no_uturn, no_entry_road, no_parking, no_gathering, red_light_running, stop_line_violation)
@@ -760,6 +781,7 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                 }
             elif rz.rule_type == "wrong_way":
                 road_dir = None
+                road_dir_points = None
                 lines_for_poly = []
                 if rz.arrow and len(rz.arrow) == 2:
                     dx = rz.arrow[1][0] - rz.arrow[0][0]
@@ -767,9 +789,10 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                     mag = math.hypot(dx, dy)
                     if mag > 0:
                         road_dir = [float(dx / mag), float(dy / mag)]
+                        road_dir_points = rz.arrow
                         mx = (rz.arrow[0][0] + rz.arrow[1][0]) / 2.0
                         my = (rz.arrow[0][1] + rz.arrow[1][1]) / 2.0
-                        px, py = -dy / mag, dx / mag
+                        px, py = dy / mag, -dx / mag
                         span = 80.0
                         lines_for_poly.append({
                             "id": f"LINE_{zone_id}",
@@ -782,6 +805,7 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                     "kind": "directional",
                     "polygon": rz.polygon,
                     "road_dir": road_dir,
+                    "road_dir_points": road_dir_points,
                     "rules": {"wrong_way": {"enable": True}},
                 }
                 if lines_for_poly:
