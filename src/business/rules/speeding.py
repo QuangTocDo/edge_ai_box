@@ -78,7 +78,7 @@ class SpeedingRule(BaseRule):
         self._bg = {"idx": frame_idx, "shift": shift, "gray": gray, "pts": p0}
         return shift
 
-    def update(self, track, H, road_dir, H_error, frame, frame_idx, t, spline=None):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def update(self, track, H, road_dir, H_error, frame, frame_idx, t):  # pyright: ignore[reportIncompatibleMethodOverride]
         st = self._st(track)
         st["limit"] = self.limit  # overlay dung de to mau
         st["skipped_shake"] = False
@@ -94,48 +94,27 @@ class SpeedingRule(BaseRule):
             st["skipped_shake"] = True  # rung: bo frame, khong tich luy
             return None
         bc = track.pts[-1]
-
-        # 1. Tinh toa do mat duong bang Spline tim duong (cong + thang) hoac ma tran H
-        if spline is not None:
-            try:
-                s, d, _ = spline.project(bc[0], bc[1])
-            except Exception:
-                return None
-            st["hist"].append((t, s, d))
-            if len(st["hist"]) < 2 or track.hits < self.min_frames:
-                return None
-            i0 = max(0, len(st["hist"]) - 1 - self.window)
-            t0, s0, d0 = st["hist"][i0]
-            dt = t - t0
-            if dt <= EPS:
-                return None
-            dist_m = s - s0
+        try:
+            X, Y = pixel_to_road(H, bc[0], bc[1])
+        except ValueError:
+            return None
+        st["hist"].append((t, X, Y))
+        if len(st["hist"]) < 2 or track.hits < self.min_frames:
+            return None
+        i0 = max(0, len(st["hist"]) - 1 - self.window)
+        t0, X0, Y0 = st["hist"][i0]
+        dt = t - t0
+        if dt <= EPS:
+            return None
+        if self.measure == "longitudinal" and road_dir:
+            dist_m = longitudinal_dist((X0, Y0), (X, Y), road_dir)
         else:
-            try:
-                X, Y = pixel_to_road(H, bc[0], bc[1])
-            except ValueError:
-                return None
-            st["hist"].append((t, X, Y))
-            if len(st["hist"]) < 2 or track.hits < self.min_frames:
-                return None
-            i0 = max(0, len(st["hist"]) - 1 - self.window)
-            t0, X0, Y0 = st["hist"][i0]
-            dt = t - t0
-            if dt <= EPS:
-                return None
-            if self.measure == "longitudinal" and road_dir:
-                dist_m = longitudinal_dist((X0, Y0), (X, Y), road_dir)
-            else:
-                dist_m = math.hypot(X - X0, Y - Y0)
-
+            dist_m = math.hypot(X - X0, Y - Y0)
         raw = abs(dist_m) / dt * 3.6
         if raw > self.max_speed:
             # Jump/ID-switch/H sai: xa lich su, khong dau doc
             st["hist"].clear()
-            if spline is not None:
-                st["hist"].append((t, s, d))
-            else:
-                st["hist"].append((t, X, Y))
+            st["hist"].append((t, X, Y))
             st["raw"].clear()
             st["over_since"] = None
             st["skipped_jump"] = True
@@ -160,8 +139,7 @@ class SpeedingRule(BaseRule):
                         "extra": {"speed_kmh": round(st["smooth"], 1),
                                   "speed_limit_kmh": self.limit,
                                   "confidence": st["conf"],
-                                  "calib_mode": "spline" if spline is not None else "homography",
-                                  "homography_error_m": H_error if spline is None else 0.0}}
+                                  "homography_error_m": H_error}}
         else:
             st["over_since"] = None
         return None
@@ -190,13 +168,12 @@ class SpeedingRule(BaseRule):
         poly = entry["polygon"]
         if poly is None:
             return None
-        spline = poly.get("_spline")
         H = poly.get("_H")
-        if spline is None and H is None:
+        if H is None:
             return None
         return self.update(track, H, poly.get("_road_dir", [1.0, 0.0]),
                            float(poly.get("_H_error", 0.0)),
-                           frame, frame_idx, t, spline=spline)
+                           frame, frame_idx, t)
 
     def explain(self, track, t=None, **ctx):
         """Ly do trang thai hien tai (khong doi state)."""
