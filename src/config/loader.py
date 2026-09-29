@@ -323,9 +323,16 @@ def effective_params(cfg, poly, rule):
 
 
 def is_enabled(cfg, poly, rule):
-    g = cfg.get(rule, {}).get("enable", True)
-    return (poly.get("rules") or {}).get(rule, {}).get("enable", g)
+    poly_rules = poly.get("rules") or {}
+    if rule in poly_rules:
+        return bool(poly_rules[rule].get("enable", True))
 
+    # Cac rule dac thu ve vung/thiet bi chi ap dung khi duoc khai bao truc tiep trong polygon
+    if rule in ("no_parking", "no_gathering", "speeding", "red_light_running", "stop_line_violation"):
+        return False
+
+    g = cfg.get(rule, {}).get("enable", True)
+    return bool(g)
 
 def resolve_plan(cfg):
     """Dung san _plan: [{polygon|None, rule, params, lines, pairs}]."""
