@@ -72,10 +72,11 @@ class ObjectStore:
         self.crop_root = Path(crop_root)
         self.retention_days = retention_days
         self.run_id = run_id or ""
-        self._db = sqlite3.connect(self.db_path)
+        self._db = sqlite3.connect(self.db_path, timeout=30.0)
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.execute("PRAGMA busy_timeout=30000")
         self._migrate()
         self._db.executescript(SCHEMA)
-        self._db.execute("PRAGMA journal_mode=WAL")
         self.crop_root.mkdir(parents=True, exist_ok=True)
 
     def _migrate(self):

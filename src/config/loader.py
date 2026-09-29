@@ -191,8 +191,9 @@ def _build_polygon_H(cfg, poly):
             f"{pid}: speeding can 'homography: {{src: [...], dst: [...]}}' "
             "toi thieu 4 cap diem (xem tool hieu chuan phim c)")
     if not poly.get("road_dir"):
-        # In road metric coordinates dst: [[0,0], [w,0], [w,l], [0,l]], length is along +Y
-        poly["road_dir"] = [0.0, 1.0]
+        raise ConfigError(
+            f"{pid}: speeding can 'road_dir: [dx, dy]' vector chi huong xe chay "
+            "(nhan phim R trong tool hieu chuan hoac ve huong duong tren Dashboard)")
     try:
         H, inl, err = build_H(src, dst)
     except ValueError as e:

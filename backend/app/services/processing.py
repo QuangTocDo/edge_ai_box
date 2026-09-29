@@ -78,7 +78,7 @@ def clean_metadata_for_json(obj: Any) -> Any:
         return res
 
     if isinstance(obj, np.ndarray):
-        if obj.ndim == 1 and obj.size <= 200:
+        if obj.ndim <= 2 and obj.size <= 200:
             return obj.tolist()
         return None
 

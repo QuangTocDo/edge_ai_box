@@ -148,6 +148,15 @@ class LiveCameraWorker:
         last_t = time.time()
         last_status_push = 0.0
 
+        # Determine native video capture framerate for accurate physics / speed measurement
+        raw_cap_fps = cap.get(cv2.CAP_PROP_FPS)
+        source_fps = float(
+            raw_cap_fps if (raw_cap_fps and raw_cap_fps > 0)
+            else (getattr(self.source, "fps", None) or getattr(engine, "fps_src", None) or self.fps_hint or 30.0)
+        )
+        if source_fps <= 0 or np.isnan(source_fps):
+            source_fps = 30.0
+
         try:
             while not self._stop_event.is_set():
                 ret, frame = cap.read()
@@ -157,7 +166,9 @@ class LiveCameraWorker:
                         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                         ret, frame = cap.read()
                         if ret and frame is not None:
-                            pass
+                            # Reset tracker state on rewind to prevent massive jump/speed artifacts
+                            if hasattr(engine, "tracker") and hasattr(engine.tracker, "tracks"):
+                                engine.tracker.tracks.clear()
                         else:
                             raise RuntimeError("Stream read returned empty frame after rewinding")
                     else:
@@ -172,7 +183,10 @@ class LiveCameraWorker:
 
                 frame_idx += 1
                 self.processed_frames = frame_idx
-                time_s = frame_idx / (self.measured_fps or self.fps_hint)
+                # CRUCIAL: Physical world time must strictly advance according to source video FPS (e.g. 30.0),
+                # NOT the server processing throughput (measured_fps). This guarantees speed measurement
+                # accuracy matches standalone pipeline.py on the machine regardless of server load.
+                time_s = frame_idx / source_fps
 
                 result = engine.process_frame(
                     frame,
