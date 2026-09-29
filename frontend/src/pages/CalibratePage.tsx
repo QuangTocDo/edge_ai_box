@@ -16,6 +16,8 @@ import {
   Save,
   Edit3,
   Sliders,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -355,7 +357,38 @@ export function CalibratePage() {
         .then(setPreview)
         .catch(() => setPreview(null));
     }, 250);
-    return () => clearTimeout(t);
+    function getRuleBadge(key: RuleKey) {
+    if (key === "speeding") {
+      if (rectPts.length === 4) {
+        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "red_light") {
+      const hasStop = stopPts.length === 2;
+      const hasLight = lightPts.length === 2;
+      if (hasStop && hasLight) {
+        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      if (hasStop) {
+        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "lines") {
+      if (existingLines.length > 0) {
+        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    const count = customZones.filter((z) => z.rule_type === key).length;
+    if (count > 0) {
+      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+    }
+    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+  }
+
+  return () => clearTimeout(t);
   }, [rectPts, widthM, lengthM, cameraId]);
 
   const addPoint = useCallback(
@@ -777,6 +810,37 @@ export function CalibratePage() {
   if (!camera && !error) return <PageLoader />;
   const currentMeta = RULE_METAS.find((m) => m.key === activeRule) || RULE_METAS[0];
 
+  function getRuleBadge(key: RuleKey) {
+    if (key === "speeding") {
+      if (rectPts.length === 4) {
+        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "red_light") {
+      const hasStop = stopPts.length === 2;
+      const hasLight = lightPts.length === 2;
+      if (hasStop && hasLight) {
+        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      if (hasStop) {
+        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "lines") {
+      if (existingLines.length > 0) {
+        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    const count = customZones.filter((z) => z.rule_type === key).length;
+    if (count > 0) {
+      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+    }
+    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+  }
+
   return (
     <div className="page-stack">
       <Link className="back-link" to={`/cameras/${cameraId}`}>
@@ -1111,7 +1175,38 @@ export function CalibratePage() {
                       ? `${ln.id} [med]`
                       : `${ln.id} ${sign >= 0 ? "+1" : "-1"}${ln.signal_id ? ` [${ln.signal_id}]` : ""}`;
                     const arr = !isDivider ? computeAllowedVec(ln.p1, ln.p2, sign, 50) : null;
-                    return (
+                    function getRuleBadge(key: RuleKey) {
+    if (key === "speeding") {
+      if (rectPts.length === 4) {
+        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "red_light") {
+      const hasStop = stopPts.length === 2;
+      const hasLight = lightPts.length === 2;
+      if (hasStop && hasLight) {
+        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      if (hasStop) {
+        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "lines") {
+      if (existingLines.length > 0) {
+        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    const count = customZones.filter((z) => z.rule_type === key).length;
+    if (count > 0) {
+      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+    }
+    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+  }
+
+  return (
                       <g key={`existing-line-${ln.id}`}>
                         <line
                           x1={ln.p1[0]}
@@ -1151,7 +1246,38 @@ export function CalibratePage() {
                     const y1 = Math.min(s.roi[1], s.roi[3]);
                     const w = Math.abs(s.roi[2] - s.roi[0]);
                     const h = Math.abs(s.roi[3] - s.roi[1]);
-                    return (
+                    function getRuleBadge(key: RuleKey) {
+    if (key === "speeding") {
+      if (rectPts.length === 4) {
+        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "red_light") {
+      const hasStop = stopPts.length === 2;
+      const hasLight = lightPts.length === 2;
+      if (hasStop && hasLight) {
+        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      if (hasStop) {
+        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "lines") {
+      if (existingLines.length > 0) {
+        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    const count = customZones.filter((z) => z.rule_type === key).length;
+    if (count > 0) {
+      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+    }
+    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+  }
+
+  return (
                       <g key={`existing-sig-${s.id}`}>
                         <rect
                           x={x1}
@@ -1175,7 +1301,38 @@ export function CalibratePage() {
                     const meta = RULE_METAS.find((m) => m.key === z.rule_type);
                     const strokeCol = meta?.color || "#06b6d4";
                     const fillCol = meta?.fill || "rgba(6, 182, 212, 0.18)";
-                    return (
+                    function getRuleBadge(key: RuleKey) {
+    if (key === "speeding") {
+      if (rectPts.length === 4) {
+        return { text: "✓ 4 góc (Homography)", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "red_light") {
+      const hasStop = stopPts.length === 2;
+      const hasLight = lightPts.length === 2;
+      if (hasStop && hasLight) {
+        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
+      if (hasStop) {
+        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    if (key === "lines") {
+      if (existingLines.length > 0) {
+        return { text: `✓ ${existingLines.length} vạch kẻ`, color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
+      }
+      return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+    }
+    const count = customZones.filter((z) => z.rule_type === key).length;
+    if (count > 0) {
+      return { text: `✓ ${count} vùng`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+    }
+    return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
+  }
+
+  return (
                       <g key={`zone-${z.id}`}>
                         <polygon
                           points={z.polygon.map((p) => p.join(",")).join(" ")}
@@ -1279,436 +1436,519 @@ export function CalibratePage() {
           </div>
         </div>
 
-        {/* Sidebar Controls */}
+        {/* Sidebar Controls - Clean Accordion Layout */}
         <aside className="calib-panel">
-          <div className="calib-steps">
-            {RULE_METAS.map((m) => {
-              const active = activeRule === m.key;
-              const hasData =
-                (m.key === "speeding" && rectPts.length === 4) ||
-                (m.key === "red_light" && stopPts.length === 2) ||
-                customZones.some((z) => z.rule_type === m.key);
+          <div style={{ marginBottom: "2px" }}>
+            <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--ink)", display: "flex", alignItems: "center", gap: "6px" }}>
+              <Sliders size={16} color="var(--brand)" /> Cấu hình quy tắc & tọa độ
+            </div>
+            <div style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: "2px" }}>
+              Bấm vào quy tắc bên dưới để mở giao diện chọn điểm góc & thiết lập
+            </div>
+          </div>
 
+          <div className="calib-accordion-group">
+            {RULE_METAS.map((m) => {
+              const isOpen = activeRule === m.key;
+              const badge = getRuleBadge(m.key);
               const Icon = m.icon;
 
               return (
-                <button
+                <div
                   key={m.key}
-                  className={`calib-step ${active ? "calib-step-active" : ""}`}
-                  style={{ borderLeft: `4px solid ${m.color}` }}
-                  onClick={() => {
-                    setActiveRule(m.key);
-                    setDraftPoly([]);
-                    setDraftArrow([]);
-                    setDrawSubMode("poly");
-                  }}
+                  className={`calib-accordion-item ${isOpen ? "active" : ""}`}
+                  style={{ borderLeft: `3.5px solid ${m.color}` }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Icon size={16} color={m.color} />
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{m.label}</div>
-                        <small style={{ color: "var(--muted)", fontSize: "11px" }}>{m.sublabel}</small>
+                  <button
+                    type="button"
+                    className="calib-accordion-header"
+                    onClick={() => {
+                      if (isOpen) {
+                        // Allow clicking to keep open
+                      } else {
+                        setActiveRule(m.key);
+                        setDraftPoly([]);
+                        setDraftArrow([]);
+                        setDrawSubMode("poly");
+                      }
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                      <div style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 6,
+                        background: `${m.color}22`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0
+                      }}>
+                        <Icon size={16} color={m.color} />
+                      </div>
+                      <div style={{ minWidth: 0, textAlign: "left" }}>
+                        <div style={{ fontWeight: 600, fontSize: "13px", color: isOpen ? "var(--ink)" : "var(--ink-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {m.label}
+                        </div>
+                        <div style={{ color: "var(--muted)", fontSize: "11px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {m.sublabel}
+                        </div>
                       </div>
                     </div>
-                    {hasData && (
-                      <span style={{ color: "var(--emerald)", fontWeight: "bold", fontSize: "13px" }}>✓</span>
-                    )}
-                  </div>
-                </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      <span className="calib-rule-badge" style={{ color: badge.color, background: badge.bg }}>
+                        {badge.text}
+                      </span>
+                      {isOpen ? <ChevronUp size={16} color="var(--muted)" /> : <ChevronDown size={16} color="var(--muted)" />}
+                    </div>
+                  </button>
+
+                  {isOpen && (
+                    <div className="calib-accordion-body">
+                      {/* Hint Banner */}
+                      <div style={{
+                        padding: "8px 10px",
+                        background: "rgba(255, 255, 255, 0.03)",
+                        borderRadius: "var(--radius-sm)",
+                        borderLeft: `2.5px solid ${m.color}`,
+                        fontSize: "11.5px",
+                        lineHeight: 1.45,
+                        color: "var(--ink-secondary)",
+                      }}>
+                        {m.hint}
+                      </div>
+
+                      {/* Rule Specific Workspace */}
+                      {m.key === "speeding" && (
+                        <div className="calib-fields">
+                          <div style={{ display: "flex", gap: "6px" }}>
+                            <button
+                              type="button"
+                              className={`calib-submode-btn ${speedSubMode === "corners" ? "active" : ""}`}
+                              onClick={() => setSpeedSubMode("corners")}
+                            >
+                              1. 4 Điểm góc ({rectPts.length}/4)
+                            </button>
+                            <button
+                              type="button"
+                              className={`calib-submode-btn ${speedSubMode === "road_dir" ? "active-emerald" : ""}`}
+                              onClick={() => setSpeedSubMode("road_dir")}
+                            >
+                              2. Hướng xe chạy ({speedRoadDirPts.length}/2)
+                            </button>
+                          </div>
+
+                          {speedSubMode === "corners" && (
+                            <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>
+                              Chấm 4 góc theo thứ tự: <b>P1 (đáy trái) → P2 (đáy phải) → P3 (đỉnh phải) → P4 (đỉnh trái)</b>.
+                            </div>
+                          )}
+
+                          {speedSubMode === "road_dir" && (
+                            <div style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.25)", borderRadius: "var(--radius-sm)", padding: "8px 10px" }}>
+                              <div style={{ fontSize: "11.5px", color: "var(--text)", marginBottom: "6px" }}>
+                                <b>Chấm 2 điểm trên hình</b>: Đuôi mũi tên → Đầu mũi tên theo chiều xe chạy.
+                              </div>
+                              {speedRoadDirPts.length === 2 && (
+                                <div style={{ fontSize: "11.5px", color: "#10b981", fontWeight: 600, marginBottom: "6px" }}>
+                                  Vector: [{((speedRoadDirPts[1][0] - speedRoadDirPts[0][0]) / (Math.hypot(speedRoadDirPts[1][0] - speedRoadDirPts[0][0], speedRoadDirPts[1][1] - speedRoadDirPts[0][1]) || 1)).toFixed(3)}, {((speedRoadDirPts[1][1] - speedRoadDirPts[0][1]) / (Math.hypot(speedRoadDirPts[1][0] - speedRoadDirPts[0][0], speedRoadDirPts[1][1] - speedRoadDirPts[0][1]) || 1)).toFixed(3)}]
+                                </div>
+                              )}
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button
+                                  type="button"
+                                  className="button button-secondary"
+                                  style={{ flex: 1, fontSize: "11px", padding: "4px 6px" }}
+                                  disabled={speedRoadDirPts.length !== 2}
+                                  onClick={() => setSpeedRoadDirPts([speedRoadDirPts[1], speedRoadDirPts[0]])}
+                                >
+                                  ⇄ Đảo chiều
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button button-secondary"
+                                  style={{ flex: 1, fontSize: "11px", padding: "4px 6px" }}
+                                  disabled={rectPts.length !== 4}
+                                  onClick={autoCalculateSpeedRoadDir}
+                                >
+                                  ⚡ Tự động trục dọc
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="calib-grid-2">
+                            <label>
+                              <span>Chiều rộng đường (m)</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={widthM}
+                                onChange={(e) => setWidthM(+e.target.value)}
+                              />
+                            </label>
+                            <label>
+                              <span>Chiều dài đoạn đo (m)</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={lengthM}
+                                onChange={(e) => setLengthM(+e.target.value)}
+                              />
+                            </label>
+                          </div>
+
+                          <label>
+                            <span>Tốc độ giới hạn (km/h)</span>
+                            <input
+                              type="number"
+                              value={speedLimit}
+                              onChange={(e) => setSpeedLimit(+e.target.value)}
+                            />
+                          </label>
+
+                          {preview && (
+                            <div className={`calib-preview ${preview.ok ? "ok" : "warn"}`} style={{ padding: "6px 10px", fontSize: "11.5px" }}>
+                              {preview.ok ? "✓ " : "⚠️ "}
+                              {preview.message}
+                            </div>
+                          )}
+
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11.5px", color: "var(--muted)" }}>
+                            <span>Điểm góc: <b>{rectPts.length}/4</b></span>
+                            {speedRoadDirPts.length === 2 && <span style={{ color: "#10b981", fontWeight: 600 }}>✓ Đã có hướng road_dir</span>}
+                          </div>
+
+                          <button
+                            type="button"
+                            className="button button-secondary"
+                            onClick={loadSampleCam01Calib}
+                            style={{ width: "100%", fontSize: "11px", borderColor: "var(--emerald)", color: "var(--emerald)", padding: "6px" }}
+                          >
+                            🎯 Nạp thông số mẫu chuẩn (cam_01.yaml)
+                          </button>
+
+                          <button
+                            className="button button-primary"
+                            disabled={rectPts.length !== 4}
+                            onClick={saveSpeedingZone}
+                            style={{ width: "100%", background: "var(--emerald)", padding: "8px" }}
+                          >
+                            + Ghi trực tiếp Homography vào active.yaml
+                          </button>
+                        </div>
+                      )}
+
+                      {m.key === "red_light" && (
+                        <div className="calib-fields">
+                          <div style={{ display: "flex", gap: "6px" }}>
+                            <button
+                              type="button"
+                              className={`calib-submode-btn ${drawSubMode === "stop" ? "active" : ""}`}
+                              onClick={() => setDrawSubMode("stop")}
+                            >
+                              1. Vạch dừng ({stopPts.length}/2)
+                            </button>
+                            <button
+                              type="button"
+                              className={`calib-submode-btn ${drawSubMode === "light" ? "active" : ""}`}
+                              onClick={() => setDrawSubMode("light")}
+                            >
+                              2. Hộp Đèn tín hiệu ({lightPts.length}/2)
+                            </button>
+                          </div>
+                          <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>
+                            Vạch dừng dùng cho cả 2 lỗi: <b>Đè vạch dừng</b> và <b>Vượt đèn đỏ</b>.
+                          </div>
+                          <div className="calib-grid-2">
+                            <button
+                              className="button button-primary"
+                              disabled={stopPts.length !== 2}
+                              onClick={saveStopLine}
+                              style={{ fontSize: "11.5px", padding: "7px 4px" }}
+                            >
+                              + Lưu Vạch dừng
+                            </button>
+                            <button
+                              className="button button-primary"
+                              disabled={lightPts.length !== 2}
+                              onClick={saveSignalBox}
+                              style={{ fontSize: "11.5px", padding: "7px 4px" }}
+                            >
+                              + Lưu Hộp đèn
+                            </button>
+                          </div>
+
+                          {/* Status & Deletion Controls */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                            {stopPts.length === 2 && (
+                              <div style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                background: "rgba(245, 158, 11, 0.12)",
+                                border: "1px solid rgba(245, 158, 11, 0.3)",
+                                padding: "6px 8px",
+                                borderRadius: "var(--radius-sm)"
+                              }}>
+                                <span style={{ fontSize: "11.5px", color: "#f59e0b", fontWeight: 600 }}>
+                                  ✓ Vạch dừng STOP_1
+                                </span>
+                                <button
+                                  type="button"
+                                  className="button button-danger"
+                                  onClick={deleteStopLine}
+                                  style={{ fontSize: "10.5px", padding: "2px 6px" }}
+                                >
+                                  <Trash2 size={11} /> Xóa
+                                </button>
+                              </div>
+                            )}
+
+                            {lightPts.length === 2 && (
+                              <div style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                background: "rgba(239, 68, 68, 0.12)",
+                                border: "1px solid rgba(239, 68, 68, 0.3)",
+                                padding: "6px 8px",
+                                borderRadius: "var(--radius-sm)"
+                              }}>
+                                <span style={{ fontSize: "11.5px", color: "#ef4444", fontWeight: 600 }}>
+                                  ✓ Hộp đèn SIGNAL_1
+                                </span>
+                                <button
+                                  type="button"
+                                  className="button button-danger"
+                                  onClick={deleteSignalBox}
+                                  style={{ fontSize: "10.5px", padding: "2px 6px" }}
+                                >
+                                  <Trash2 size={11} /> Xóa
+                                </button>
+                              </div>
+                            )}
+
+                            {(stopPts.length > 0 || lightPts.length > 0) && (
+                              <button
+                                type="button"
+                                className="button button-danger"
+                                onClick={deleteEntireRedLightRule}
+                                style={{ width: "100%", fontSize: "11.5px", marginTop: "2px", padding: "6px" }}
+                              >
+                                <Trash2 size={12} /> Xóa sạch cấu hình Đèn đỏ
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {m.key === "lines" && (
+                        <div className="calib-fields">
+                          <label>
+                            <span>Hướng được phép lưu thông</span>
+                            <select
+                              value={lineAllowedSign}
+                              onChange={(e) => setLineAllowedSign(+e.target.value)}
+                              style={{ width: "100%", padding: "7px", borderRadius: "var(--radius-sm)", background: "var(--surface)", color: "inherit", border: "1px solid var(--line)" }}
+                            >
+                              <option value={1}>Cùng chiều mũi tên (allowed_sign: +1)</option>
+                              <option value={-1}>Ngược chiều mũi tên (allowed_sign: -1)</option>
+                            </select>
+                          </label>
+                          <div className="calib-count">{draftLine.length} / 2 điểm (Điểm đầu → Điểm cuối)</div>
+                          <button
+                            className="button button-primary"
+                            disabled={draftLine.length !== 2}
+                            onClick={saveLaneLine}
+                            style={{ width: "100%", padding: "8px" }}
+                          >
+                            + Ghi vạch phân làn vào active.yaml
+                          </button>
+
+                          {existingLines.length > 0 && (
+                            <div style={{ marginTop: 6 }}>
+                              <div style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                                Vạch kẻ hiện có ({existingLines.length}):
+                              </div>
+                              <ul className="calib-lane-list" style={{ maxHeight: "120px", overflowY: "auto" }}>
+                                {existingLines.map((ln) => (
+                                  <li key={ln.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span style={{ fontSize: "11px" }}>{ln.id} ([{ln.p1[0]}, {ln.p1[1]}] → [{ln.p2[0]}, {ln.p2[1]}])</span>
+                                    <button
+                                      onClick={() => removeLine(ln.id)}
+                                      title="Xóa vạch kẻ khỏi active.yaml"
+                                      style={{ color: "var(--rose)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {m.key === "wrong_way" && (
+                        <div className="calib-fields">
+                          <div style={{ display: "flex", gap: "6px" }}>
+                            <button
+                              type="button"
+                              className={`calib-submode-btn ${drawSubMode === "poly" ? "active" : ""}`}
+                              onClick={() => setDrawSubMode("poly")}
+                            >
+                              1. Viền làn ({draftPoly.length} điểm)
+                            </button>
+                            <button
+                              type="button"
+                              className={`calib-submode-btn ${drawSubMode === "arrow" ? "active" : ""}`}
+                              disabled={draftPoly.length < 3}
+                              onClick={() => setDrawSubMode("arrow")}
+                            >
+                              2. Mũi tên ({draftArrow.length}/2)
+                            </button>
+                          </div>
+
+                          <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>
+                            {drawSubMode === "poly"
+                              ? "Chấm tối thiểu 3 điểm bao quanh làn đường một chiều."
+                              : "Chấm 2 điểm tạo mũi tên chỉ chiều xe chạy đúng luật."}
+                          </div>
+
+                          <button
+                            className="button button-primary"
+                            disabled={draftPoly.length < 3 || draftArrow.length !== 2}
+                            onClick={commitZone}
+                            style={{ width: "100%", padding: "8px" }}
+                          >
+                            + Thêm làn đường vào active.yaml
+                          </button>
+
+                          {customZones.filter((z) => z.rule_type === "wrong_way").length > 0 && (
+                            <div style={{ marginTop: 6 }}>
+                              <div style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                                Làn đường đã tạo:
+                              </div>
+                              <ul className="calib-lane-list" style={{ maxHeight: "120px", overflowY: "auto" }}>
+                                {customZones
+                                  .filter((z) => z.rule_type === "wrong_way")
+                                  .map((z) => (
+                                    <li key={z.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <span style={{ fontSize: "11px" }}>{z.id} ({z.polygon.length} đỉnh)</span>
+                                      <button
+                                        onClick={() => removeZone(z.id)}
+                                        title="Xóa vùng"
+                                        style={{ color: "var(--rose)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </li>
+                                  ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {(m.key === "no_uturn" ||
+                        m.key === "no_entry_road" ||
+                        m.key === "no_parking" ||
+                        m.key === "no_gathering") && (
+                        <div className="calib-fields">
+                          {(m.key === "no_entry_road" || m.key === "no_parking" || m.key === "no_gathering") && (
+                            <label>
+                              <span>
+                                {m.key === "no_parking"
+                                  ? "Thời gian đỗ tối đa cho phép (giây)"
+                                  : m.key === "no_gathering"
+                                  ? "Thời gian duy trì tụ tập (giây)"
+                                  : "Thời gian xe lưu trong vùng cấm (giây)"}
+                              </span>
+                              <input
+                                type="number"
+                                step="0.5"
+                                value={draftDwell}
+                                onChange={(e) => setDraftDwell(+e.target.value)}
+                              />
+                            </label>
+                          )}
+
+                          {m.key === "no_gathering" && (
+                            <label>
+                              <span>Số lượng người tối thiểu</span>
+                              <input
+                                type="number"
+                                value={draftMinPersons}
+                                onChange={(e) => setDraftMinPersons(+e.target.value)}
+                              />
+                            </label>
+                          )}
+
+                          <div className="calib-count">{draftPoly.length} điểm đã chấm (Tối thiểu 3 điểm)</div>
+
+                          <button
+                            className="button button-primary"
+                            disabled={draftPoly.length < 3}
+                            onClick={commitZone}
+                            style={{ width: "100%", padding: "8px" }}
+                          >
+                            + Xác nhận vùng {m.label.split(".")[1]?.trim() || ""} ({draftPoly.length} điểm)
+                          </button>
+
+                          {customZones.filter((z) => z.rule_type === m.key).length > 0 && (
+                            <div style={{ marginTop: 6 }}>
+                              <div style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                                Vùng đã tạo:
+                              </div>
+                              <ul className="calib-lane-list" style={{ maxHeight: "120px", overflowY: "auto" }}>
+                                {customZones
+                                  .filter((z) => z.rule_type === m.key)
+                                  .map((z) => (
+                                    <li key={z.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <span style={{ fontSize: "11px" }}>{z.id} ({z.polygon.length} đỉnh)</span>
+                                      <button
+                                        onClick={() => removeZone(z.id)}
+                                        title="Xóa vùng"
+                                        style={{ color: "var(--rose)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </li>
+                                  ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
 
-          <div
-            className="calib-hint"
-            style={{
-              padding: "10px 14px",
-              background: "var(--surface-raised)",
-              borderRadius: "var(--radius-sm)",
-              borderLeft: `3px solid ${currentMeta.color}`,
-              fontSize: "12.5px",
-              lineHeight: 1.5,
-            }}
-          >
-            {currentMeta.hint}
-          </div>
-
-          {/* Form Controls for Active Rule */}
-          {activeRule === "speeding" && (
-            <div className="calib-fields">
-              <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-                <button
-                  type="button"
-                  className={`button ${speedSubMode === "corners" ? "button-primary" : "button-secondary"}`}
-                  style={{ flex: 1, fontSize: "12px" }}
-                  onClick={() => setSpeedSubMode("corners")}
-                >
-                  1. 4 Điểm góc ({rectPts.length}/4)
-                </button>
-                <button
-                  type="button"
-                  className={`button ${speedSubMode === "road_dir" ? "button-primary" : "button-secondary"}`}
-                  style={{ flex: 1, fontSize: "12px", background: speedSubMode === "road_dir" ? "#059669" : undefined }}
-                  onClick={() => setSpeedSubMode("road_dir")}
-                >
-                  2. Hướng đường road_dir ({speedRoadDirPts.length}/2)
-                </button>
-              </div>
-
-              {speedSubMode === "road_dir" && (
-                <div style={{ background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.25)", borderRadius: "var(--radius-sm)", padding: "10px", marginBottom: "8px" }}>
-                  <div style={{ fontSize: "12px", color: "var(--text)", marginBottom: "6px" }}>
-                    <b>Chấm 2 điểm trên hình</b>: Điểm bắt đầu (Đuôi mũi tên) → Điểm kết thúc (Đầu mũi tên) theo chiều xe chạy.
-                  </div>
-                  {speedRoadDirPts.length === 2 && (
-                    <div style={{ fontSize: "12px", color: "var(--emerald)", fontWeight: 600, marginBottom: "8px" }}>
-                      Vector: [{((speedRoadDirPts[1][0] - speedRoadDirPts[0][0]) / (Math.hypot(speedRoadDirPts[1][0] - speedRoadDirPts[0][0], speedRoadDirPts[1][1] - speedRoadDirPts[0][1]) || 1)).toFixed(3)}, {((speedRoadDirPts[1][1] - speedRoadDirPts[0][1]) / (Math.hypot(speedRoadDirPts[1][0] - speedRoadDirPts[0][0], speedRoadDirPts[1][1] - speedRoadDirPts[0][1]) || 1)).toFixed(3)}]
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    <button
-                      type="button"
-                      className="button button-secondary"
-                      style={{ flex: 1, fontSize: "11px" }}
-                      disabled={speedRoadDirPts.length !== 2}
-                      onClick={() => setSpeedRoadDirPts([speedRoadDirPts[1], speedRoadDirPts[0]])}
-                    >
-                      ⇄ Đảo chiều
-                    </button>
-                    <button
-                      type="button"
-                      className="button button-secondary"
-                      style={{ flex: 1, fontSize: "11px" }}
-                      disabled={rectPts.length !== 4}
-                      onClick={autoCalculateSpeedRoadDir}
-                    >
-                      ⚡ Tự động theo trục dọc
-                    </button>
-                  </div>
-                </div>
-              )}
-              <label>
-                <span>Chiều rộng thực tế mặt đường (Mét)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={widthM}
-                  onChange={(e) => setWidthM(+e.target.value)}
-                />
-              </label>
-              <label>
-                <span>Chiều dài thực tế đoạn đường (Mét)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={lengthM}
-                  onChange={(e) => setLengthM(+e.target.value)}
-                />
-              </label>
-              <label>
-                <span>Tốc độ giới hạn (km/h)</span>
-                <input
-                  type="number"
-                  value={speedLimit}
-                  onChange={(e) => setSpeedLimit(+e.target.value)}
-                />
-              </label>
-              {preview && (
-                <div className={`calib-preview ${preview.ok ? "ok" : "warn"}`}>
-                  {preview.ok ? "✓ " : "⚠ "}
-                  {preview.message}
-                </div>
-              )}
-              <div className="calib-count">{rectPts.length} / 4 điểm góc đã chọn</div>
-              
-              <button
-                type="button"
-                className="button button-secondary"
-                onClick={loadSampleCam01Calib}
-                style={{ width: "100%", marginTop: "6px", fontSize: "11.5px", borderColor: "var(--emerald)", color: "var(--emerald)" }}
-              >
-                🎯 Nạp thông số hiệu chuẩn chuẩn mẫu từ máy (cam_01.yaml)
-              </button>
-
-              <button
-                className="button button-primary"
-                disabled={rectPts.length !== 4}
-                onClick={saveSpeedingZone}
-                style={{ width: "100%", marginTop: "8px", background: "var(--emerald)" }}
-              >
-                + Cập nhật trực tiếp Homography vào active.yaml
-              </button>
-            </div>
-          )}
-
-          {activeRule === "red_light" && (
-            <div className="calib-fields">
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  className={`button ${drawSubMode === "stop" ? "button-primary" : "button-secondary"}`}
-                  onClick={() => setDrawSubMode("stop")}
-                  style={{ flex: 1, fontSize: "12px" }}
-                >
-                  1. Vẽ Vạch dừng ({stopPts.length}/2)
-                </button>
-                <button
-                  className={`button ${drawSubMode === "light" ? "button-primary" : "button-secondary"}`}
-                  onClick={() => setDrawSubMode("light")}
-                  style={{ flex: 1, fontSize: "12px" }}
-                >
-                  2. Hộp Đèn tín hiệu ({lightPts.length}/2)
-                </button>
-              </div>
-              <small style={{ color: "var(--muted)", fontSize: "12px" }}>
-                Vạch dừng dùng cho cả 2 lỗi: <b>Đè vạch dừng (Stop Line)</b> và <b>Vượt đèn đỏ (Red Light)</b>.
-              </small>
-              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                <button
-                  className="button button-primary"
-                  disabled={stopPts.length !== 2}
-                  onClick={saveStopLine}
-                  style={{ flex: 1, fontSize: "11.5px" }}
-                >
-                  + Lưu Vạch dừng
-                </button>
-                <button
-                  className="button button-primary"
-                  disabled={lightPts.length !== 2}
-                  onClick={saveSignalBox}
-                  style={{ flex: 1, fontSize: "11.5px" }}
-                >
-                  + Lưu Hộp đèn
-                </button>
-              </div>
-
-              {/* Status & Deletion Controls */}
-              <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                {stopPts.length === 2 && (
-                  <div style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    background: "rgba(245, 158, 11, 0.12)",
-                    border: "1px solid rgba(245, 158, 11, 0.3)",
-                    padding: "8px 10px",
-                    borderRadius: "var(--radius-sm)"
-                  }}>
-                    <span style={{ fontSize: "12px", color: "#f59e0b", fontWeight: 600 }}>
-                      ✓ Vạch dừng STOP_1
-                    </span>
-                    <button
-                      type="button"
-                      className="button button-danger"
-                      onClick={deleteStopLine}
-                      style={{ fontSize: "11px", padding: "3px 8px" }}
-                    >
-                      <Trash2 size={12} /> Xóa vạch dừng
-                    </button>
-                  </div>
-                )}
-
-                {lightPts.length === 2 && (
-                  <div style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    background: "rgba(239, 68, 68, 0.12)",
-                    border: "1px solid rgba(239, 68, 68, 0.3)",
-                    padding: "8px 10px",
-                    borderRadius: "var(--radius-sm)"
-                  }}>
-                    <span style={{ fontSize: "12px", color: "#ef4444", fontWeight: 600 }}>
-                      ✓ Hộp đèn SIGNAL_1
-                    </span>
-                    <button
-                      type="button"
-                      className="button button-danger"
-                      onClick={deleteSignalBox}
-                      style={{ fontSize: "11px", padding: "3px 8px" }}
-                    >
-                      <Trash2 size={12} /> Xóa hộp đèn
-                    </button>
-                  </div>
-                )}
-
-                {(stopPts.length > 0 || lightPts.length > 0) && (
-                  <button
-                    type="button"
-                    className="button button-danger"
-                    onClick={deleteEntireRedLightRule}
-                    style={{ width: "100%", fontSize: "12px", marginTop: "4px" }}
-                  >
-                    <Trash2 size={13} /> Xóa sạch cấu hình Vượt đèn đỏ khỏi active.yaml
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeRule === "lines" && (
-            <div className="calib-fields">
-              <label>
-                <span>Hướng được phép lưu thông</span>
-                <select
-                  value={lineAllowedSign}
-                  onChange={(e) => setLineAllowedSign(+e.target.value)}
-                  style={{ width: "100%", padding: "8px", borderRadius: "var(--radius-sm)", background: "var(--surface-raised)", color: "inherit", border: "1px solid var(--border)" }}
-                >
-                  <option value={1}>Cùng chiều mũi tên (allowed_sign: +1)</option>
-                  <option value={-1}>Ngược chiều mũi tên (allowed_sign: -1)</option>
-                </select>
-              </label>
-              <div className="calib-count">{draftLine.length} / 2 điểm (Điểm đầu → Điểm cuối)</div>
-              <button
-                className="button button-primary"
-                disabled={draftLine.length !== 2}
-                onClick={saveLaneLine}
-                style={{ width: "100%", marginTop: "8px" }}
-              >
-                + Ghi vạch phân làn vào active.yaml
-              </button>
-            </div>
-          )}
-          {activeRule === "wrong_way" && (
-            <div className="calib-fields">
-              {drawSubMode === "poly" ? (
-                <button
-                  className="button button-secondary"
-                  disabled={draftPoly.length < 3}
-                  onClick={() => setDrawSubMode("arrow")}
-                >
-                  Chốt viền làn ({draftPoly.length} điểm) → Vẽ hướng đi
-                </button>
-              ) : (
-                <button
-                  className="button button-secondary"
-                  onClick={() => setDrawSubMode("poly")}
-                >
-                  Quay lại sửa viền làn
-                </button>
-              )}
-
-              {drawSubMode === "arrow" && (
-                <div className="calib-count">{draftArrow.length} / 2 điểm mũi tên (Đuôi → Đầu)</div>
-              )}
-
-              <button
-                className="button button-primary"
-                disabled={draftPoly.length < 3 || draftArrow.length !== 2}
-                onClick={commitZone}
-              >
-                + Thêm làn đường
-              </button>
-            </div>
-          )}
-
-          {(activeRule === "no_uturn" ||
-            activeRule === "no_entry_road" ||
-            activeRule === "no_parking" ||
-            activeRule === "no_gathering") && (
-            <div className="calib-fields">
-              {(activeRule === "no_entry_road" || activeRule === "no_parking" || activeRule === "no_gathering") && (
-                <label>
-                  <span>
-                    {activeRule === "no_parking"
-                      ? "Thời gian đỗ tối đa cho phép (giây)"
-                      : activeRule === "no_gathering"
-                      ? "Thời gian duy trì tụ tập (giây)"
-                      : "Thời gian xe lưu trong vùng cấm (giây)"}
-                  </span>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={draftDwell}
-                    onChange={(e) => setDraftDwell(+e.target.value)}
-                  />
-                </label>
-              )}
-
-              {activeRule === "no_gathering" && (
-                <label>
-                  <span>Số lượng người tối thiểu kích hoạt vi phạm</span>
-                  <input
-                    type="number"
-                    value={draftMinPersons}
-                    onChange={(e) => setDraftMinPersons(+e.target.value)}
-                  />
-                </label>
-              )}
-
-              <button
-                className="button button-primary"
-                disabled={draftPoly.length < 3}
-                onClick={commitZone}
-              >
-                + Xác nhận vùng này ({draftPoly.length} điểm)
-              </button>
-            </div>
-          )}
-
-          {/* List of configured zones for this rule */}
-          {customZones.filter((z) => z.rule_type === activeRule).length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>
-                Các vùng đã tạo:
-              </div>
-              <ul className="calib-lane-list">
-                {customZones
-                  .filter((z) => z.rule_type === activeRule)
-                  .map((z) => (
-                    <li key={z.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>{z.id} ({z.polygon.length} đỉnh)</span>
-                      <button
-                        onClick={() => removeZone(z.id)}
-                        title="Xóa vùng khỏi active.yaml"
-                        style={{ color: "var(--rose)", background: "transparent", border: "none", cursor: "pointer", padding: "4px" }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Existing Lines from active.yaml */}
-          {existingLines.length > 0 && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>
-                Vạch kẻ phân làn từ active.yaml ({existingLines.length}):
-              </div>
-              <ul className="calib-lane-list">
-                {existingLines.map((ln) => (
-                  <li key={ln.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>{ln.id} ([{ln.p1[0]}, {ln.p1[1]}] → [{ln.p2[0]}, {ln.p2[1]}])</span>
-                    <button
-                      onClick={() => removeLine(ln.id)}
-                      title="Xóa vạch kẻ khỏi active.yaml"
-                      style={{ color: "var(--rose)", background: "transparent", border: "none", cursor: "pointer", padding: "4px" }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Overall Status Summary */}
-          <div className="calib-summary">
-            <div>
-              <b>{rectPts.length === 4 ? "✓" : "—"}</b> Quá tốc độ (Homography)
-            </div>
-            <div>
-              <b>{stopPts.length === 2 ? "✓" : "—"}</b> Vạch dừng xe
-            </div>
-            <div>
-              <b>{lightPts.length === 2 ? "✓" : "—"}</b> Hộp đèn tín hiệu
-            </div>
-            <div>
-              <b>{customZones.length > 0 ? "✓" : "—"}</b> Các vùng nghiệp vụ khác ({customZones.length})
-            </div>
+          {/* Clean Summary Footer */}
+          <div style={{
+            padding: "8px 12px",
+            background: "var(--surface-raised)",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "11.5px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            border: "1px solid var(--line)"
+          }}>
+            <span style={{ color: "var(--muted)" }}>Tổng quan giám sát:</span>
+            <span style={{ fontWeight: 600, color: "var(--emerald)" }}>
+              {[
+                rectPts.length === 4,
+                stopPts.length === 2,
+                lightPts.length === 2,
+                existingLines.length > 0,
+                customZones.length > 0,
+              ].filter(Boolean).length} / 5 nhóm quy tắc đã sẵn sàng
+            </span>
           </div>
         </aside>
       </div>

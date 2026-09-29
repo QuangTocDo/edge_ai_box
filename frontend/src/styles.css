@@ -1437,9 +1437,15 @@ tbody tr:hover {
 
 .calib-layout {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: 1fr 400px;
   gap: 20px;
   align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .calib-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .calib-canvas {
@@ -1482,13 +1488,132 @@ tbody tr:hover {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 16px;
   position: sticky;
   top: 80px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   box-shadow: var(--card-shadow);
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+
+.calib-accordion-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calib-accordion-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.calib-accordion-item:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.calib-accordion-item.active {
+  border-color: var(--brand);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.calib-accordion-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--ink);
+  text-align: left;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.calib-accordion-header:hover {
+  background: var(--surface-hover);
+}
+
+.calib-accordion-body {
+  padding: 14px;
+  background: var(--surface-raised);
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: calibFadeIn 0.2s ease-out;
+}
+
+@keyframes calibFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.calib-rule-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2.5px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.calib-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.calib-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.calib-submode-btn {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.calib-submode-btn:hover {
+  background: var(--surface-hover);
+}
+
+.calib-submode-btn.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
+.calib-submode-btn.active-emerald {
+  background: #059669;
+  color: #fff;
+  border-color: #059669;
 }
 
 .calib-steps {
