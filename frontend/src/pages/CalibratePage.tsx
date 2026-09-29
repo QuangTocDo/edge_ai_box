@@ -598,6 +598,7 @@ export function CalibratePage() {
           speeding: {
             enable: true,
             limit_kmh: speedLimit,
+            mode: "spline",
           },
         },
       };

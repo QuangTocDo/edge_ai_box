@@ -25,13 +25,13 @@ class SpeedingRule(BaseRule):
               "min_track_frames": 20, "min_bbox_height": 15.0,
               "max_speed_kmh": 250.0, "sustain_s": 1.0, #max_speed 250
               "max_background_shift_px": 2.0, "measure": "longitudinal",
-              "min_hits": 3, "cooldown_s": 10.0, "mode": "spline"}
+              "min_hits": 3, "cooldown_s": 10.0}
 
     def __init__(self, limit_kmh=80.0, window_size=10, smooth_window_s=0.8,
                  min_track_frames=20, min_bbox_height=15.0,
                  max_speed_kmh=250.0, sustain_s=1.0,
                  max_background_shift_px=2.0, measure="longitudinal",
-                 min_hits=3, cooldown_s=10.0, mode="spline"):
+                 min_hits=3, cooldown_s=10.0):
         super().__init__(min_hits=min_hits, cooldown_s=cooldown_s)
         self.limit = float(limit_kmh)
         self.window = int(window_size)
@@ -42,7 +42,6 @@ class SpeedingRule(BaseRule):
         self.sustain_s = float(sustain_s)
         self.max_shift = float(max_background_shift_px)
         self.measure = measure
-        self.mode = mode
         # Cache LK theo frame (tinh 1 lan/frame, khong phai moi track)
         self._bg = {"idx": -1, "shift": 0.0, "gray": None, "pts": None}
 
