@@ -14,7 +14,7 @@ interface AuthState {
   logout: () => void;
 }
 
-const STORAGE_KEY = "signalwatch.auth";
+const STORAGE_KEY = "edgetraffic.auth";
 
 const AuthContext = createContext<AuthState | null>(null);
 

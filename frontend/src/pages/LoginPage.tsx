@@ -54,7 +54,7 @@ export function LoginPage() {
           <div className="login-brand">
             <div className="login-brand-mark"><Camera size={22} /></div>
             <div>
-              <strong>SignalWatch</strong>
+              <strong>EdgeTraffic</strong>
               <span>Traffic Vision Operations</span>
             </div>
           </div>

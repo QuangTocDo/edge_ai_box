@@ -67,7 +67,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <ShieldCheck size={22} />
           </div>
           <div className="brand-text">
-            <strong>SignalWatch AI</strong>
+            <strong>EdgeTraffic</strong>
             <span>Traffic Operations</span>
           </div>
           <button

@@ -40,6 +40,14 @@ type RuleKey =
   | "no_parking"
   | "no_gathering";
 
+interface SpeedZone {
+  id: string;
+  polygon: number[][];
+  width_m: number;
+  length_m: number;
+  limit_kmh: number;
+}
+
 interface RuleMeta {
   key: RuleKey;
   label: string;
@@ -162,7 +170,9 @@ export function CalibratePage() {
   const [activeRule, setActiveRule] = useState<RuleKey>("speeding");
   const [drawSubMode, setDrawSubMode] = useState<"poly" | "arrow" | "stop" | "light">("poly");
 
-  // Speeding
+  // Speeding (Ho tro nhieu vung SPEED_1, SPEED_2... theo tung lan xe)
+  const [speedZones, setSpeedZones] = useState<SpeedZone[]>([]);
+  const [editingSpeedZoneId, setEditingSpeedZoneId] = useState<string | null>(null);
   const [rectPts, setRectPts] = useState<number[][]>([]);
   const [widthM, setWidthM] = useState(3.5);
   const [lengthM, setLengthM] = useState(15.0);
@@ -170,7 +180,8 @@ export function CalibratePage() {
 
   const [preview, setPreview] = useState<HomographyPreview | null>(null);
 
-  // Red Light & Stop Line
+  // Red Light & Stop Lines (Ho tro nhieu vach dung STOP_1, STOP_2... theo tung lan xe)
+  const [stopLines, setStopLines] = useState<Array<{ id: string; p1: number[]; p2: number[]; role?: string }>>([]);
   const [stopPts, setStopPts] = useState<number[][]>([]);
   const [lightPts, setLightPts] = useState<number[][]>([]);
 
@@ -212,31 +223,37 @@ export function CalibratePage() {
         if (cfg.raw_yaml) setRawYaml(cfg.raw_yaml);
         if (!cfg) return;
 
-        // 1. Homography / Speeding rectangle
-        const speedPoly = cfg.polygons?.find((p) => p.homography?.src && p.homography.src.length === 4);
-        if (speedPoly && speedPoly.homography?.src) {
-          setRectPts(speedPoly.homography.src);
-          if (speedPoly.homography.dst && speedPoly.homography.dst.length === 4) {
-            const dst = speedPoly.homography.dst;
-            const w = Math.round(Math.abs(dst[1][0] - dst[0][0]) * 10) / 10;
-            const l = Math.round(Math.abs(dst[2][1] - dst[1][1]) * 10) / 10;
-            if (w > 0) setWidthM(w);
-            if (l > 0) setLengthM(l);
+        // 1. Homography / Speeding zones (Nap toan bo cac vung toc do SPEED_1, SPEED_2...)
+        const rawSpeedPolys = (cfg.polygons || []).filter(
+          (p: any) => p.homography?.src?.length === 4 || p.rules?.speeding || p.id?.startsWith("SPEED_")
+        );
+        const parsedSpeedZones: SpeedZone[] = rawSpeedPolys.map((p: any, idx: number) => {
+          const src = p.homography?.src || p.polygon || [];
+          const dst = p.homography?.dst || [];
+          let w = 7.5;
+          let l = 50.0;
+          if (dst && dst.length === 4) {
+            w = Math.round(Math.abs(dst[1][0] - dst[0][0]) * 10) / 10 || 7.5;
+            l = Math.round(Math.abs(dst[2][1] - dst[1][1]) * 10) / 10 || 50.0;
           }
-          const spLimit = speedPoly.rules?.speeding?.limit_kmh || speedPoly.rules?.speeding?.speed_limit_kmh;
-          if (spLimit) setSpeedLimit(spLimit);
+          const spLimit = p.rules?.speeding?.limit_kmh || p.rules?.speeding?.speed_limit_kmh || 50;
+          return {
+            id: p.id || `SPEED_${idx + 1}`,
+            polygon: src,
+            width_m: w,
+            length_m: l,
+            limit_kmh: spLimit,
+          };
+        });
+        setSpeedZones(parsedSpeedZones);
 
-        }
-
-        // 2. Stop Line & Traffic Lines
+        // 2. Stop Lines & Traffic Lines (Nap toan bo vach dung theo tung lan)
         if (cfg.lines) {
-          const stopLine = cfg.lines.find(
-            (ln) => ln.id?.toUpperCase().includes("STOP") || ln.role === "stop"
+          const stops = cfg.lines.filter(
+            (ln: any) => ln.id?.toUpperCase().includes("STOP") || ln.role === "stop"
           );
-          if (stopLine && stopLine.p1 && stopLine.p2) {
-            setStopPts([stopLine.p1, stopLine.p2]);
-          }
-          const otherLines = cfg.lines.filter((ln) => ln !== stopLine && ln.p1 && ln.p2);
+          setStopLines(stops);
+          const otherLines = cfg.lines.filter((ln: any) => !stops.includes(ln) && ln.p1 && ln.p2);
           setExistingLines(otherLines);
         }
 
@@ -275,7 +292,6 @@ export function CalibratePage() {
           else if (rules.no_entry_road?.enable || (p.kind === "banned" && !rules.no_parking?.enable)) matchedRule = "no_entry_road";
           else if (rules.no_parking?.enable) matchedRule = "no_parking";
           else if (rules.no_gathering?.enable) matchedRule = "no_gathering";
-          else if (rules.speeding?.enable && p !== speedPoly) matchedRule = "speeding";
 
           if (matchedRule) {
             let arrow: number[][] | undefined = undefined;
@@ -441,10 +457,51 @@ export function CalibratePage() {
 
 
 
+  function startEditSpeedZone(zone: SpeedZone) {
+    setEditingSpeedZoneId(zone.id);
+    setRectPts(zone.polygon);
+    setWidthM(zone.width_m);
+    setLengthM(zone.length_m);
+    setSpeedLimit(zone.limit_kmh);
+    setSyncStatus(`Đang chỉnh sửa vùng đo tốc độ: ${zone.id}`);
+  }
+
+  function cancelEditSpeedZone() {
+    setEditingSpeedZoneId(null);
+    setRectPts([]);
+    setSyncStatus("");
+  }
+
+  async function removeSpeedZone(id: string) {
+    if (!window.confirm(`Xác nhận xóa vùng đo tốc độ ${id} khỏi active.yaml?`)) return;
+    try {
+      await api.deleteCameraPolygon(cameraId, id);
+      setSpeedZones((prev) => prev.filter((z) => z.id !== id));
+      if (editingSpeedZoneId === id) {
+        setEditingSpeedZoneId(null);
+        setRectPts([]);
+      }
+      setSyncStatus(`✓ Đã xóa vùng tốc độ ${id} khỏi active.yaml!`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   async function saveSpeedingZone() {
     if (rectPts.length !== 4) return;
     setError("");
     setSyncStatus("");
+
+    let targetId = editingSpeedZoneId;
+    if (!targetId) {
+      const usedIds = new Set(speedZones.map((z) => z.id));
+      let idx = 1;
+      while (usedIds.has(`SPEED_${idx}`)) idx++;
+      targetId = `SPEED_${idx}`;
+    }
+
     const world = [
       [0.0, 0.0],
       [widthM, 0.0],
@@ -453,7 +510,7 @@ export function CalibratePage() {
     ];
 
     const polyPayload: any = {
-      id: "POLY_1",
+      id: targetId,
       kind: "directional",
       polygon: rectPts,
       rules: {
@@ -470,7 +527,19 @@ export function CalibratePage() {
     };
     try {
       await api.saveCameraPolygon(cameraId, polyPayload);
-      setSyncStatus("✓ Đã ghi trực tiếp ma trận Homography & vùng tốc độ POLY_1 vào active.yaml!");
+      setSpeedZones((prev) => [
+        ...prev.filter((z) => z.id !== targetId),
+        {
+          id: targetId!,
+          polygon: rectPts,
+          width_m: widthM,
+          length_m: lengthM,
+          limit_kmh: speedLimit,
+        },
+      ]);
+      setRectPts([]);
+      setEditingSpeedZoneId(null);
+      setSyncStatus(`✓ Đã ghi vùng tốc độ ${targetId} (${widthM}m x ${lengthM}m, ${speedLimit}km/h) vào active.yaml!`);
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
     } catch (err) {
@@ -482,15 +551,34 @@ export function CalibratePage() {
     if (stopPts.length !== 2) return;
     setError("");
     setSyncStatus("");
+    const used = new Set(stopLines.map((l) => l.id));
+    let idx = 1;
+    while (used.has(`STOP_${idx}`)) idx++;
+    const stopId = `STOP_${idx}`;
+    const payload = {
+      id: stopId,
+      p1: stopPts[0],
+      p2: stopPts[1],
+      role: "stop",
+    };
     try {
-      await api.saveCameraLine(cameraId, {
-        id: "STOP_1",
-        p1: stopPts[0],
-        p2: stopPts[1],
-        pt1: stopPts[0],
-        pt2: stopPts[1],
-      });
-      setSyncStatus("✓ Đã ghi trực tiếp vạch dừng STOP_1 vào active.yaml!");
+      await api.saveCameraLine(cameraId, payload);
+      setStopLines((prev) => [...prev.filter((l) => l.id !== stopId), payload]);
+      setStopPts([]);
+      setSyncStatus(`✓ Đã ghi vạch dừng ${stopId} vào active.yaml!`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function removeStopLine(id: string) {
+    if (!window.confirm(`Xác nhận xóa vạch dừng ${id} khỏi active.yaml?`)) return;
+    try {
+      await api.deleteCameraLine(cameraId, id);
+      setStopLines((prev) => prev.filter((l) => l.id !== id));
+      setSyncStatus(`✓ Đã xóa vạch dừng ${id} khỏi active.yaml!`);
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
     } catch (err) {
@@ -502,6 +590,10 @@ export function CalibratePage() {
     if (lightPts.length !== 2) return;
     setError("");
     setSyncStatus("");
+    const used = new Set(existingSignals.map((s) => s.id));
+    let idx = 1;
+    while (used.has(`SIGNAL_${idx}`)) idx++;
+    const sigId = `SIGNAL_${idx}`;
     const box = [
       Math.min(lightPts[0][0], lightPts[1][0]),
       Math.min(lightPts[0][1], lightPts[1][1]),
@@ -510,38 +602,27 @@ export function CalibratePage() {
     ];
     try {
       await api.saveCameraSignal(cameraId, {
-        id: "SIGNAL_1",
+        id: sigId,
         roi: box,
         box: box,
         default: "red",
       });
-      setSyncStatus("✓ Đã ghi trực tiếp hộp đèn SIGNAL_1 vào active.yaml!");
-      const cfg = await api.cameraConfig(cameraId);
-      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  async function deleteStopLine() {
-    if (!window.confirm("Xác nhận xóa vạch dừng STOP_1 khỏi active.yaml?")) return;
-    try {
-      await api.deleteCameraLine(cameraId, "STOP_1");
-      setStopPts([]);
-      setSyncStatus("✓ Đã xóa vạch dừng STOP_1 khỏi configs/active.yaml!");
-      const cfg = await api.cameraConfig(cameraId);
-      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  async function deleteSignalBox() {
-    if (!window.confirm("Xác nhận xóa hộp đèn SIGNAL_1 khỏi active.yaml?")) return;
-    try {
-      await api.deleteCameraSignal(cameraId, "SIGNAL_1");
+      setExistingSignals((prev) => [...prev.filter((s) => s.id !== sigId), { id: sigId, roi: box }]);
       setLightPts([]);
-      setSyncStatus("✓ Đã xóa hộp đèn tín hiệu SIGNAL_1 khỏi configs/active.yaml!");
+      setSyncStatus(`✓ Đã ghi hộp đèn ${sigId} vào active.yaml!`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function removeSignalBox(id: string) {
+    if (!window.confirm(`Xác nhận xóa hộp đèn ${id} khỏi active.yaml?`)) return;
+    try {
+      await api.deleteCameraSignal(cameraId, id);
+      setExistingSignals((prev) => prev.filter((s) => s.id !== id));
+      setSyncStatus(`✓ Đã xóa hộp đèn tín hiệu ${id} khỏi active.yaml!`);
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
     } catch (err) {
@@ -550,10 +631,16 @@ export function CalibratePage() {
   }
 
   async function deleteEntireRedLightRule() {
-    if (!window.confirm("Xác nhận xóa TOÀN BỘ cấu hình Vượt đèn đỏ & Đè vạch (vạch dừng + hộp đèn) khỏi active.yaml?")) return;
+    if (!window.confirm("Xác nhận xóa TOÀN BỘ cấu hình Vượt đèn đỏ & Đè vạch (tất cả vạch dừng + hộp đèn) khỏi active.yaml?")) return;
     try {
-      try { await api.deleteCameraLine(cameraId, "STOP_1"); } catch (_) {}
-      try { await api.deleteCameraSignal(cameraId, "SIGNAL_1"); } catch (_) {}
+      for (const ln of stopLines) {
+        try { await api.deleteCameraLine(cameraId, ln.id); } catch (_) {}
+      }
+      for (const sig of existingSignals) {
+        try { await api.deleteCameraSignal(cameraId, sig.id); } catch (_) {}
+      }
+      setStopLines([]);
+      setExistingSignals([]);
       setStopPts([]);
       setLightPts([]);
       setSyncStatus("✓ Đã xóa hoàn toàn cấu hình Vượt đèn đỏ & Đè vạch khỏi configs/active.yaml!");
@@ -970,16 +1057,53 @@ export function CalibratePage() {
                     ))}
                   </g>
 
-                  {/* 1. Ground Rectangle & road_dir (Speeding Calib P1..P4 in Magenta like draw_lines.py) */}
+                  {/* 1. Saved Speeding Zones (Nhung vung da luu theo tung lan) */}
+                  {speedZones.map((z) => {
+                    if (editingSpeedZoneId === z.id) return null;
+                    const midX = z.polygon.reduce((sum, pt) => sum + pt[0], 0) / (z.polygon.length || 1);
+                    const midY = z.polygon.reduce((sum, pt) => sum + pt[1], 0) / (z.polygon.length || 1);
+                    return (
+                      <g key={`speed-zone-${z.id}`}>
+                        <polygon
+                          points={z.polygon.map((p) => p.join(",")).join(" ")}
+                          fill="rgba(217, 70, 239, 0.14)"
+                          stroke="#d946ef"
+                          strokeWidth={2.5}
+                          strokeDasharray="5 3"
+                        />
+                        <rect
+                          x={midX - 48}
+                          y={midY - 12}
+                          width={96}
+                          height={22}
+                          fill="rgba(15, 23, 42, 0.88)"
+                          stroke="#d946ef"
+                          strokeWidth={1}
+                          rx={4}
+                        />
+                        <text
+                          x={midX}
+                          y={midY + 3}
+                          fill="#fdf4ff"
+                          fontSize={11}
+                          fontWeight={700}
+                          textAnchor="middle"
+                        >
+                          {z.id}: {z.limit_kmh}km/h
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* 1.2. Draft Speeding Polygon (Vung dang cham / dang sua) */}
                   {rectPts.length > 1 && (
                     <polygon
                       points={rectPts.map((p) => p.join(",")).join(" ")}
-                      fill="rgba(217, 70, 239, 0.18)"
+                      fill="rgba(217, 70, 239, 0.22)"
                       stroke="#d946ef"
                       strokeWidth={3}
                     />
                   )}
-
                   {rectPts.map((p, i) => (
                     <g key={`rect-pt-${i}`}>
                       <circle cx={p[0]} cy={p[1]} r={8} fill="#d946ef" stroke="#fff" strokeWidth={2} />
@@ -989,7 +1113,31 @@ export function CalibratePage() {
                     </g>
                   ))}
 
-                  {/* 2. Stop Line & Traffic Light */}
+                  {/* 2. Saved Stop Lines (Cac vach dung da luu theo tung lan) */}
+                  {stopLines.map((ln) => (
+                    <g key={`stop-line-${ln.id}`}>
+                      <line
+                        x1={ln.p1[0]}
+                        y1={ln.p1[1]}
+                        x2={ln.p2[0]}
+                        y2={ln.p2[1]}
+                        stroke="#f59e0b"
+                        strokeWidth={4}
+                      />
+                      <text
+                        x={(ln.p1[0] + ln.p2[0]) / 2}
+                        y={(ln.p1[1] + ln.p2[1]) / 2 - 8}
+                        fill="#f59e0b"
+                        fontSize={13}
+                        fontWeight={700}
+                        textAnchor="middle"
+                      >
+                        {ln.id}
+                      </text>
+                    </g>
+                  ))}
+
+                  {/* 2.2. Draft Stop Line */}
                   {stopPts.length === 2 && (
                     <line
                       x1={stopPts[0][0]}
@@ -1004,6 +1152,35 @@ export function CalibratePage() {
                     <circle key={`stop-pt-${i}`} cx={p[0]} cy={p[1]} r={7} fill="#f59e0b" stroke="#fff" strokeWidth={2} />
                   ))}
 
+                  {/* 2.3. Saved Signals */}
+                  {existingSignals.map((sig) => {
+                    const b = sig.roi;
+                    return (
+                      <g key={`signal-${sig.id}`}>
+                        <rect
+                          x={Math.min(b[0], b[2])}
+                          y={Math.min(b[1], b[3])}
+                          width={Math.abs(b[2] - b[0])}
+                          height={Math.abs(b[3] - b[1])}
+                          fill="rgba(239, 68, 68, 0.15)"
+                          stroke="#ef4444"
+                          strokeWidth={2.5}
+                          strokeDasharray="4 2"
+                        />
+                        <text
+                          x={Math.min(b[0], b[2])}
+                          y={Math.min(b[1], b[3]) - 6}
+                          fill="#ef4444"
+                          fontSize={12}
+                          fontWeight={700}
+                        >
+                          {sig.id}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* 2.4. Draft Signal Box */}
                   {lightPts.length === 2 && (
                     <rect
                       x={Math.min(lightPts[0][0], lightPts[1][0])}
@@ -1308,9 +1485,34 @@ export function CalibratePage() {
                 {/* Rule Specific Workspace */}
                 {m.key === "speeding" && (
                   <div className="calib-fields">
-                    <div style={{ fontSize: "11px", color: "var(--muted)", lineHeight: 1.4 }}>
-                      Thứ tự chấm 4 điểm góc mặt đường: <b>P1 (đáy trái) → P2 (đáy phải) → P3 (đỉnh phải) → P4 (đỉnh trái)</b>.
-                    </div>
+                    {editingSpeedZoneId ? (
+                      <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        background: "rgba(217, 70, 239, 0.1)",
+                        border: "1px solid rgba(217, 70, 239, 0.3)",
+                        borderRadius: "var(--radius-sm)",
+                        padding: "5px 8px",
+                        fontSize: "11px",
+                      }}>
+                        <span style={{ color: "#d946ef", fontWeight: 700 }}>
+                          Đang sửa: {editingSpeedZoneId}
+                        </span>
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          style={{ fontSize: "10.5px", padding: "2px 6px" }}
+                          onClick={cancelEditSpeedZone}
+                        >
+                          Hủy / Vẽ mới
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "11px", color: "var(--muted)", lineHeight: 1.4 }}>
+                        Thứ tự chấm 4 điểm góc: <b>P1 (đáy trái) → P2 (đáy phải) → P3 (đỉnh phải) → P4 (đỉnh trái)</b>.
+                      </div>
+                    )}
 
                     {/* Kích thước thực tế: bố cục 2 cột rộng rãi, không bị tràn ngang */}
                     <div className="calib-grid-2">
@@ -1379,9 +1581,78 @@ export function CalibratePage() {
                           gap: "6px",
                         }}
                       >
-                        <Check size={14} /> Ghi Homography vào active.yaml
+                        <Check size={14} /> {editingSpeedZoneId ? `Cập nhật vùng ${editingSpeedZoneId}` : `+ Ghi thêm vùng tốc độ (SPEED_${(() => {
+                          const used = new Set(speedZones.map(z => z.id));
+                          let i = 1; while (used.has(`SPEED_${i}`)) i++; return i;
+                        })()})`}
                       </button>
                     </div>
+
+                    {/* Danh sách các vùng tốc độ đã lưu (hỗ trợ nhiều làn xe) */}
+                    {speedZones.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                          Vùng đo tốc độ đã lưu ({speedZones.length}):
+                        </div>
+                        <ul className="calib-lane-list" style={{ maxHeight: "120px", overflowY: "auto" }}>
+                          {speedZones.map((z) => (
+                            <li
+                              key={z.id}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                padding: "4px 8px",
+                                background: editingSpeedZoneId === z.id ? "rgba(217, 70, 239, 0.15)" : "var(--surface-sunken)",
+                                border: editingSpeedZoneId === z.id ? "1px solid #d946ef" : "1px solid transparent",
+                                borderRadius: "4px",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              <div style={{ display: "flex", flexDirection: "column" }}>
+                                <span style={{ fontSize: "11.5px", fontFamily: "monospace", color: "#d946ef", fontWeight: 700 }}>
+                                  {z.id} ({z.limit_kmh} km/h)
+                                </span>
+                                <span style={{ fontSize: "10px", color: "var(--muted)" }}>
+                                  {z.width_m}m x {z.length_m}m
+                                </span>
+                              </div>
+                              <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => startEditSpeedZone(z)}
+                                  title={`Chỉnh sửa ${z.id}`}
+                                  style={{
+                                    color: "var(--text)",
+                                    background: "transparent",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    padding: "2px",
+                                    fontSize: "12px",
+                                  }}
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeSpeedZone(z.id)}
+                                  title={`Xóa vùng ${z.id}`}
+                                  style={{
+                                    color: "var(--rose)",
+                                    background: "transparent",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    padding: "2px",
+                                  }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1422,7 +1693,10 @@ export function CalibratePage() {
                           onClick={saveStopLine}
                           style={{ background: "var(--amber)", color: "#000", fontWeight: 700, padding: "6px 8px", fontSize: "11.5px", gridColumn: "span 2" }}
                         >
-                          + Lưu Vạch dừng STOP_1
+                          + Ghi Vạch dừng STOP_{(() => {
+                            const used = new Set(stopLines.map(l => l.id));
+                            let i = 1; while (used.has(`STOP_${i}`)) i++; return i;
+                          })()}
                         </button>
                       ) : (
                         <button
@@ -1431,10 +1705,65 @@ export function CalibratePage() {
                           onClick={saveSignalBox}
                           style={{ background: "var(--amber)", color: "#000", fontWeight: 700, padding: "6px 8px", fontSize: "11.5px", gridColumn: "span 2" }}
                         >
-                          + Lưu Hộp đèn SIGNAL_1
+                          + Ghi Hộp đèn SIGNAL_{(() => {
+                            const used = new Set(existingSignals.map(s => s.id));
+                            let i = 1; while (used.has(`SIGNAL_${i}`)) i++; return i;
+                          })()}
                         </button>
                       )}
                     </div>
+
+                    {/* Danh sách vạch dừng đã lưu theo làn */}
+                    {stopLines.length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                          Vạch dừng đã lưu ({stopLines.length}):
+                        </div>
+                        <ul className="calib-lane-list" style={{ maxHeight: "90px", overflowY: "auto" }}>
+                          {stopLines.map((ln) => (
+                            <li key={ln.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ fontSize: "11.5px", fontFamily: "monospace", color: "var(--amber)", fontWeight: 700 }}>
+                                {ln.id}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeStopLine(ln.id)}
+                                title={`Xóa vạch ${ln.id}`}
+                                style={{ color: "var(--rose)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Danh sách hộp đèn đã lưu */}
+                    {existingSignals.length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                          Hộp đèn tín hiệu ({existingSignals.length}):
+                        </div>
+                        <ul className="calib-lane-list" style={{ maxHeight: "90px", overflowY: "auto" }}>
+                          {existingSignals.map((sig) => (
+                            <li key={sig.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ fontSize: "11.5px", fontFamily: "monospace", color: "var(--amber)", fontWeight: 700 }}>
+                                {sig.id}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeSignalBox(sig.id)}
+                                title={`Xóa hộp đèn ${sig.id}`}
+                                style={{ color: "var(--rose)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1643,9 +1972,9 @@ export function CalibratePage() {
             <span style={{ color: "var(--muted)" }}>Tổng quan giám sát:</span>
             <span style={{ fontWeight: 600, color: "var(--emerald)" }}>
               {[
-                rectPts.length === 4,
-                stopPts.length === 2,
-                lightPts.length === 2,
+                speedZones.length > 0 || rectPts.length === 4,
+                stopLines.length > 0 || stopPts.length === 2,
+                existingSignals.length > 0 || lightPts.length === 2,
                 existingLines.length > 0,
                 customZones.length > 0,
               ].filter(Boolean).length} / 5 nhóm quy tắc đã sẵn sàng

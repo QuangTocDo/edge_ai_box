@@ -346,10 +346,11 @@ def save_camera_polygon(camera_id: str, poly: dict = Body(...), db: Session = De
         poly["road_dir"] = [0.0, 1.0]
     if not pid:
         used = {p.get("id") for p in polygons if isinstance(p, dict)}
+        prefix = "SPEED" if (poly.get("homography") or poly.get("rules", {}).get("speeding")) else "POLY"
         idx = 1
-        while f"POLY_{idx}" in used:
+        while f"{prefix}_{idx}" in used:
             idx += 1
-        pid = f"POLY_{idx}"
+        pid = f"{prefix}_{idx}"
         poly["id"] = pid
 
 
