@@ -43,6 +43,9 @@ type RuleKey =
 interface SpeedZone {
   id: string;
   polygon: number[][];
+  homography_src?: number[][];
+  road_dir?: number[];
+  road_dir_points?: number[][];
   width_m: number;
   length_m: number;
   limit_kmh: number;
@@ -170,9 +173,11 @@ export function CalibratePage() {
   const [activeRule, setActiveRule] = useState<RuleKey>("speeding");
   const [drawSubMode, setDrawSubMode] = useState<"poly" | "arrow" | "stop" | "light">("poly");
 
-  // Speeding (Ho tro nhieu vung SPEED_1, SPEED_2... theo tung lan xe)
+  // Speeding (Ho tro ve polygon tuy y + hieu chuan 4 diem H + road_dir)
   const [speedZones, setSpeedZones] = useState<SpeedZone[]>([]);
   const [editingSpeedZoneId, setEditingSpeedZoneId] = useState<string | null>(null);
+  const [speedSubMode, setSpeedSubMode] = useState<"poly" | "calib" | "arrow">("poly");
+  const [speedArrow, setSpeedArrow] = useState<number[][]>([]);
   const [rectPts, setRectPts] = useState<number[][]>([]);
   const [widthM, setWidthM] = useState(3.5);
   const [lengthM, setLengthM] = useState(15.0);
@@ -228,18 +233,22 @@ export function CalibratePage() {
           (p: any) => p.homography?.src?.length === 4 || p.rules?.speeding || p.id?.startsWith("SPEED_")
         );
         const parsedSpeedZones: SpeedZone[] = rawSpeedPolys.map((p: any, idx: number) => {
-          const src = p.homography?.src || p.polygon || [];
+          const poly = p.polygon || p.homography?.src || [];
+          const src = p.homography?.src || (p.polygon?.length === 4 ? p.polygon : []);
           const dst = p.homography?.dst || [];
-          let w = 7.5;
-          let l = 50.0;
+          let w = 3.5;
+          let l = 15.0;
           if (dst && dst.length === 4) {
-            w = Math.round(Math.abs(dst[1][0] - dst[0][0]) * 10) / 10 || 7.5;
-            l = Math.round(Math.abs(dst[2][1] - dst[1][1]) * 10) / 10 || 50.0;
+            w = Math.round(Math.abs(dst[1][0] - dst[0][0]) * 10) / 10 || 3.5;
+            l = Math.round(Math.abs(dst[2][1] - dst[1][1]) * 10) / 10 || 15.0;
           }
           const spLimit = p.rules?.speeding?.limit_kmh || p.rules?.speeding?.speed_limit_kmh || 50;
           return {
             id: p.id || `SPEED_${idx + 1}`,
-            polygon: src,
+            polygon: poly,
+            homography_src: src,
+            road_dir: p.road_dir,
+            road_dir_points: p.road_dir_points,
             width_m: w,
             length_m: l,
             limit_kmh: spLimit,
@@ -350,7 +359,13 @@ export function CalibratePage() {
   const addPoint = useCallback(
     (p: number[]) => {
       if (activeRule === "speeding") {
-        setRectPts((v) => (v.length >= 4 ? v : [...v, p]));
+        if (speedSubMode === "poly") {
+          setDraftPoly((v) => [...v, p]);
+        } else if (speedSubMode === "calib") {
+          setRectPts((v) => (v.length >= 4 ? v : [...v, p]));
+        } else if (speedSubMode === "arrow") {
+          setSpeedArrow((v) => (v.length >= 2 ? [p] : [...v, p]));
+        }
       } else if (activeRule === "red_light") {
         if (drawSubMode === "stop") {
           setStopPts((v) => (v.length >= 2 ? v : [...v, p]));
@@ -377,7 +392,9 @@ export function CalibratePage() {
 
   function undoPoint() {
     if (activeRule === "speeding") {
-      setRectPts((v) => v.slice(0, -1));
+      if (speedSubMode === "poly") setDraftPoly((v) => v.slice(0, -1));
+      else if (speedSubMode === "calib") setRectPts((v) => v.slice(0, -1));
+      else if (speedSubMode === "arrow") setSpeedArrow((v) => v.slice(0, -1));
     } else if (activeRule === "red_light") {
       if (drawSubMode === "stop") setStopPts((v) => v.slice(0, -1));
       else setLightPts((v) => v.slice(0, -1));
@@ -390,8 +407,11 @@ export function CalibratePage() {
 
   function resetCurrentRule() {
     if (activeRule === "speeding") {
-      setRectPts([]);
-      setPreview(null);
+      if (speedSubMode === "poly") setDraftPoly([]);
+      else if (speedSubMode === "calib") {
+        setRectPts([]);
+        setPreview(null);
+      } else if (speedSubMode === "arrow") setSpeedArrow([]);
     } else if (activeRule === "red_light") {
       if (stopPts.length > 0 || lightPts.length > 0) {
         deleteEntireRedLightRule();
@@ -459,16 +479,21 @@ export function CalibratePage() {
 
   function startEditSpeedZone(zone: SpeedZone) {
     setEditingSpeedZoneId(zone.id);
-    setRectPts(zone.polygon);
-    setWidthM(zone.width_m);
-    setLengthM(zone.length_m);
-    setSpeedLimit(zone.limit_kmh);
+    setDraftPoly(zone.polygon || []);
+    setRectPts(zone.homography_src && zone.homography_src.length === 4 ? zone.homography_src : (zone.polygon.length === 4 ? zone.polygon : []));
+    setSpeedArrow(zone.road_dir_points || []);
+    setWidthM(zone.width_m || 3.5);
+    setLengthM(zone.length_m || 15.0);
+    setSpeedLimit(zone.limit_kmh || 50);
+    setActiveRule("speeding");
     setSyncStatus(`Đang chỉnh sửa vùng đo tốc độ: ${zone.id}`);
   }
 
   function cancelEditSpeedZone() {
     setEditingSpeedZoneId(null);
+    setDraftPoly([]);
     setRectPts([]);
+    setSpeedArrow([]);
     setSyncStatus("");
   }
 
@@ -490,7 +515,15 @@ export function CalibratePage() {
   }
 
   async function saveSpeedingZone() {
-    if (rectPts.length !== 4) return;
+    const finalPoly = draftPoly.length >= 3 ? draftPoly : rectPts;
+    if (rectPts.length !== 4) {
+      setError("Vui lòng chấm đủ 4 điểm hiệu chuẩn mặt phẳng đường H (Bước 2).");
+      return;
+    }
+    if (finalPoly.length < 3) {
+      setError("Vui lòng vẽ đa giác vùng làn đường (Bước 1) hoặc chấm 4 góc hiệu chuẩn.");
+      return;
+    }
     setError("");
     setSyncStatus("");
 
@@ -509,10 +542,22 @@ export function CalibratePage() {
       [0.0, lengthM],
     ];
 
+    let rdir: number[] = [0.0, 1.0];
+    let rdirPts: number[][] | undefined = undefined;
+    if (speedArrow.length === 2) {
+      const dx = speedArrow[1][0] - speedArrow[0][0];
+      const dy = speedArrow[1][1] - speedArrow[0][1];
+      const mag = Math.hypot(dx, dy) || 1;
+      rdir = [Math.round((dx / mag) * 1000) / 1000, Math.round((dy / mag) * 1000) / 1000];
+      rdirPts = speedArrow;
+    }
+
     const polyPayload: any = {
       id: targetId,
       kind: "directional",
-      polygon: rectPts,
+      polygon: finalPoly,
+      road_dir: rdir,
+      road_dir_points: rdirPts,
       rules: {
         speeding: {
           enable: true,
@@ -531,15 +576,20 @@ export function CalibratePage() {
         ...prev.filter((z) => z.id !== targetId),
         {
           id: targetId!,
-          polygon: rectPts,
+          polygon: finalPoly,
+          homography_src: rectPts,
+          road_dir: rdir,
+          road_dir_points: rdirPts,
           width_m: widthM,
           length_m: lengthM,
           limit_kmh: speedLimit,
         },
       ]);
       setRectPts([]);
+      setDraftPoly([]);
+      setSpeedArrow([]);
       setEditingSpeedZoneId(null);
-      setSyncStatus(`✓ Đã ghi vùng tốc độ ${targetId} (${widthM}m x ${lengthM}m, ${speedLimit}km/h) vào active.yaml!`);
+      setSyncStatus(`✓ Đã ghi vùng tốc độ ${targetId} (${finalPoly.length} đỉnh, ${widthM}m x ${lengthM}m, ${speedLimit}km/h) vào active.yaml!`);
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
     } catch (err) {
@@ -1064,13 +1114,41 @@ export function CalibratePage() {
                     const midY = z.polygon.reduce((sum, pt) => sum + pt[1], 0) / (z.polygon.length || 1);
                     return (
                       <g key={`speed-zone-${z.id}`}>
+                        {/* Da giac vung lan duong */}
                         <polygon
                           points={z.polygon.map((p) => p.join(",")).join(" ")}
                           fill="rgba(217, 70, 239, 0.14)"
                           stroke="#d946ef"
                           strokeWidth={2.5}
-                          strokeDasharray="5 3"
                         />
+                        {/* 4 diem hieu chuan Homography mat duong (net dut) */}
+                        {z.homography_src && z.homography_src.length === 4 && (
+                          <g opacity={0.75}>
+                            <polygon
+                              points={z.homography_src.map((p) => p.join(",")).join(" ")}
+                              fill="none"
+                              stroke="#10b981"
+                              strokeWidth={1.5}
+                              strokeDasharray="4 3"
+                            />
+                            {z.homography_src.map((pt, idx) => (
+                              <circle key={`hz-${z.id}-${idx}`} cx={pt[0]} cy={pt[1]} r={4} fill="#10b981" />
+                            ))}
+                          </g>
+                        )}
+                        {/* Mui ten huong xe chay */}
+                        {z.road_dir_points && z.road_dir_points.length === 2 && (
+                          <line
+                            x1={z.road_dir_points[0][0]}
+                            y1={z.road_dir_points[0][1]}
+                            x2={z.road_dir_points[1][0]}
+                            y2={z.road_dir_points[1][1]}
+                            stroke="#facc15"
+                            strokeWidth={3}
+                            markerEnd="url(#arrow-yellow)"
+                          />
+                        )}
+                        {/* Nhan vung */}
                         <rect
                           x={midX - 48}
                           y={midY - 12}
@@ -1095,23 +1173,63 @@ export function CalibratePage() {
                     );
                   })}
 
-                  {/* 1.2. Draft Speeding Polygon (Vung dang cham / dang sua) */}
-                  {rectPts.length > 1 && (
-                    <polygon
-                      points={rectPts.map((p) => p.join(",")).join(" ")}
-                      fill="rgba(217, 70, 239, 0.22)"
-                      stroke="#d946ef"
-                      strokeWidth={3}
-                    />
-                  )}
-                  {rectPts.map((p, i) => (
-                    <g key={`rect-pt-${i}`}>
-                      <circle cx={p[0]} cy={p[1]} r={8} fill="#d946ef" stroke="#fff" strokeWidth={2} />
-                      <text x={p[0] + 10} y={p[1] - 8} fill="#d946ef" fontSize={20} fontWeight={700}>
-                        P{i + 1}
-                      </text>
+                  {/* 1.2. Draft Speeding Components khi activeRule === "speeding" */}
+                  {activeRule === "speeding" && (
+                    <g>
+                      {/* Vung da giac lan duong dang ve */}
+                      {draftPoly.length > 1 && (
+                        <polygon
+                          points={draftPoly.map((p) => p.join(",")).join(" ")}
+                          fill="rgba(217, 70, 239, 0.2)"
+                          stroke="#d946ef"
+                          strokeWidth={3}
+                        />
+                      )}
+                      {draftPoly.map((p, i) => (
+                        <circle key={`sp-poly-${i}`} cx={p[0]} cy={p[1]} r={6} fill="#d946ef" stroke="#fff" strokeWidth={1.5} />
+                      ))}
+
+                      {/* 4 diem Homography mat duong dang cham */}
+                      {rectPts.length > 1 && (
+                        <polygon
+                          points={rectPts.map((p) => p.join(",")).join(" ")}
+                          fill="rgba(16, 185, 129, 0.15)"
+                          stroke="#10b981"
+                          strokeWidth={2}
+                          strokeDasharray="4 2"
+                        />
+                      )}
+                      {rectPts.map((p, i) => (
+                        <g key={`rect-pt-${i}`}>
+                          <circle cx={p[0]} cy={p[1]} r={7} fill="#10b981" stroke="#fff" strokeWidth={2} />
+                          <text x={p[0] + 8} y={p[1] - 8} fill="#10b981" fontSize={15} fontWeight={700}>
+                            P{i + 1}
+                          </text>
+                        </g>
+                      ))}
+
+                      {/* Mui ten huong xe chay dang cham */}
+                      {speedArrow.length === 2 && (
+                        <line
+                          x1={speedArrow[0][0]}
+                          y1={speedArrow[0][1]}
+                          x2={speedArrow[1][0]}
+                          y2={speedArrow[1][1]}
+                          stroke="#facc15"
+                          strokeWidth={3.5}
+                          markerEnd="url(#arrow-yellow)"
+                        />
+                      )}
+                      {speedArrow.map((p, i) => (
+                        <g key={`sp-arr-${i}`}>
+                          <circle cx={p[0]} cy={p[1]} r={6} fill="#facc15" stroke="#fff" strokeWidth={2} />
+                          <text x={p[0] + 8} y={p[1] - 8} fill="#facc15" fontSize={13} fontWeight={700}>
+                            {i === 0 ? "A (Dau)" : "B (Huong)"}
+                          </text>
+                        </g>
+                      ))}
                     </g>
-                  ))}
+                  )}
 
                   {/* 2. Saved Stop Lines (Cac vach dung da luu theo tung lan) */}
                   {stopLines.map((ln) => (
@@ -1510,11 +1628,94 @@ export function CalibratePage() {
                       </div>
                     ) : (
                       <div style={{ fontSize: "11px", color: "var(--muted)", lineHeight: 1.4 }}>
-                        Thứ tự chấm 4 điểm góc: <b>P1 (đáy trái) → P2 (đáy phải) → P3 (đỉnh phải) → P4 (đỉnh trái)</b>.
+                        Phương pháp chuẩn: <b>Vẽ vùng làn đường (đa giác) + Hiệu chuẩn 4 góc mặt đường H + Hướng xe chạy (road_dir)</b>.
                       </div>
                     )}
 
-                    {/* Kích thước thực tế: bố cục 2 cột rộng rãi, không bị tràn ngang */}
+                    {/* 3 Tab chế độ vẽ / hiệu chuẩn */}
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 1fr",
+                      gap: "4px",
+                      background: "var(--surface-raised)",
+                      padding: "3px",
+                      borderRadius: "var(--radius-sm)",
+                    }}>
+                      <button
+                        type="button"
+                        className={`button ${speedSubMode === "poly" ? "button-primary" : "button-secondary"}`}
+                        style={{
+                          fontSize: "10.5px",
+                          padding: "5px 4px",
+                          background: speedSubMode === "poly" ? "#d946ef" : "transparent",
+                          color: speedSubMode === "poly" ? "#fff" : "var(--ink-secondary)",
+                        }}
+                        onClick={() => setSpeedSubMode("poly")}
+                      >
+                        1. Đa giác ({draftPoly.length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`button ${speedSubMode === "calib" ? "button-primary" : "button-secondary"}`}
+                        style={{
+                          fontSize: "10.5px",
+                          padding: "5px 4px",
+                          background: speedSubMode === "calib" ? "var(--emerald)" : "transparent",
+                          color: speedSubMode === "calib" ? "#fff" : "var(--ink-secondary)",
+                        }}
+                        onClick={() => setSpeedSubMode("calib")}
+                      >
+                        2. 4 góc H ({rectPts.length}/4)
+                      </button>
+                      <button
+                        type="button"
+                        className={`button ${speedSubMode === "arrow" ? "button-primary" : "button-secondary"}`}
+                        style={{
+                          fontSize: "10.5px",
+                          padding: "5px 4px",
+                          background: speedSubMode === "arrow" ? "#eab308" : "transparent",
+                          color: speedSubMode === "arrow" ? "#000" : "var(--ink-secondary)",
+                        }}
+                        onClick={() => setSpeedSubMode("arrow")}
+                      >
+                        3. Hướng ({speedArrow.length}/2)
+                      </button>
+                    </div>
+
+                    {/* Hướng dẫn theo tab đang chọn */}
+                    {speedSubMode === "poly" && (
+                      <div style={{ fontSize: "11px", color: "var(--ink-secondary)", background: "rgba(217, 70, 239, 0.08)", padding: "6px 8px", borderRadius: "var(--radius-sm)", borderLeft: "2.5px solid #d946ef" }}>
+                        Click các điểm trên ảnh để vẽ đa giác bao quanh làn đường ({draftPoly.length} điểm). <i>(Nếu không vẽ vùng riêng, sẽ tự động dùng 4 góc H làm vùng).</i>
+                        {draftPoly.length > 0 && (
+                          <div style={{ marginTop: "4px" }}>
+                            <button type="button" className="button button-secondary" style={{ fontSize: "10px", padding: "2px 6px" }} onClick={() => setDraftPoly([])}>
+                              Xóa đa giác vẽ lại
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {speedSubMode === "calib" && (
+                      <div style={{ fontSize: "11px", color: "var(--ink-secondary)", background: "rgba(16, 185, 129, 0.08)", padding: "6px 8px", borderRadius: "var(--radius-sm)", borderLeft: "2.5px solid var(--emerald)" }}>
+                        Chấm 4 điểm góc mặt đường (phím c): <b>P1 (đáy trái) → P2 (đáy phải) → P3 (đỉnh phải) → P4 (đỉnh trái)</b>.
+                      </div>
+                    )}
+
+                    {speedSubMode === "arrow" && (
+                      <div style={{ fontSize: "11px", color: "var(--ink-secondary)", background: "rgba(234, 179, 8, 0.08)", padding: "6px 8px", borderRadius: "var(--radius-sm)", borderLeft: "2.5px solid #eab308" }}>
+                        Click 2 điểm <b>A (vị trí xe đến) → B (hướng xe đi)</b> dọc theo trục làn đường để xác định vector <code>road_dir</code>.
+                        {speedArrow.length > 0 && (
+                          <div style={{ marginTop: "4px" }}>
+                            <button type="button" className="button button-secondary" style={{ fontSize: "10px", padding: "2px 6px" }} onClick={() => setSpeedArrow([])}>
+                              Xóa hướng vẽ lại
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Kích thước thực tế */}
                     <div className="calib-grid-2">
                       <label>
                         <span>Chiều rộng làn (m)</span>
@@ -1536,7 +1737,7 @@ export function CalibratePage() {
                       </label>
                     </div>
 
-                    {/* Tốc độ giới hạn: 1 hàng riêng biệt rõ ràng */}
+                    {/* Tốc độ giới hạn */}
                     <label>
                       <span>Tốc độ giới hạn tối đa (km/h)</span>
                       <input
@@ -1554,7 +1755,7 @@ export function CalibratePage() {
                     )}
 
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "var(--muted)" }}>
-                      <span>Điểm góc mặt đường: <b style={{ color: rectPts.length === 4 ? "var(--emerald)" : "inherit" }}>{rectPts.length}/4</b></span>
+                      <span>Hiệu chuẩn H (4 điểm): <b style={{ color: rectPts.length === 4 ? "var(--emerald)" : "inherit" }}>{rectPts.length}/4</b></span>
                       {rectPts.length === 4 ? (
                         <span style={{ color: "var(--emerald)", fontWeight: 600 }}>✓ Đã sẵn sàng Homography</span>
                       ) : (
@@ -1562,7 +1763,7 @@ export function CalibratePage() {
                       )}
                     </div>
 
-                    {/* Nút hành động: hiển thị đầy đủ, không bị khuất, không cần thanh lăn ngang */}
+                    {/* Nút hành động */}
                     <div style={{ marginTop: "4px" }}>
                       <button
                         type="button"
