@@ -46,6 +46,61 @@ interface SpeedZone {
   width_m: number;
   length_m: number;
   limit_kmh: number;
+  mode?: "spline" | "homography";
+  centerline?: {
+    points: number[][];
+    length_m: number;
+  };
+}
+
+function buildSplineCorridor(pts: number[][], widthPx: number = 70): number[][] {
+  if (pts.length < 2) return [];
+  const left: number[][] = [];
+  const right: number[][] = [];
+  const half = widthPx / 2;
+
+  for (let i = 0; i < pts.length; i++) {
+    let dx = 0;
+    let dy = 0;
+    if (i === 0) {
+      dx = pts[1][0] - pts[0][0];
+      dy = pts[1][1] - pts[0][1];
+    } else if (i === pts.length - 1) {
+      dx = pts[i][0] - pts[i - 1][0];
+      dy = pts[i][1] - pts[i - 1][1];
+    } else {
+      dx = pts[i + 1][0] - pts[i - 1][0];
+      dy = pts[i + 1][1] - pts[i - 1][1];
+    }
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    left.push([Math.round(pts[i][0] + nx * half), Math.round(pts[i][1] + ny * half)]);
+    right.push([Math.round(pts[i][0] - nx * half), Math.round(pts[i][1] - ny * half)]);
+  }
+  return [...left, ...right.reverse()];
+}
+
+function getSplinePath(pts: number[][]): string {
+  if (pts.length < 2) return "";
+  if (pts.length === 2) {
+    return `M ${pts[0][0]} ${pts[0][1]} L ${pts[1][0]} ${pts[1][1]}`;
+  }
+  let path = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+
+    const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+
+    path += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2[0]} ${p2[1]}`;
+  }
+  return path;
 }
 
 interface RuleMeta {
@@ -170,12 +225,15 @@ export function CalibratePage() {
   const [activeRule, setActiveRule] = useState<RuleKey>("speeding");
   const [drawSubMode, setDrawSubMode] = useState<"poly" | "arrow" | "stop" | "light">("poly");
 
-  // Speeding (Ho tro nhieu vung SPEED_1, SPEED_2... theo tung lan xe)
+  // Speeding (Ho tro ca duong cong Spline & duong thang 4 goc, nhieu vung SPEED_1, SPEED_2...)
+  const [speedCalibMode, setSpeedCalibMode] = useState<"spline" | "homography">("spline");
+  const [splinePts, setSplinePts] = useState<number[][]>([]);
+  const [corridorWidthPx, setCorridorWidthPx] = useState(70);
   const [speedZones, setSpeedZones] = useState<SpeedZone[]>([]);
   const [editingSpeedZoneId, setEditingSpeedZoneId] = useState<string | null>(null);
   const [rectPts, setRectPts] = useState<number[][]>([]);
   const [widthM, setWidthM] = useState(3.5);
-  const [lengthM, setLengthM] = useState(15.0);
+  const [lengthM, setLengthM] = useState(50.0);
   const [speedLimit, setSpeedLimit] = useState(50);
 
   const [preview, setPreview] = useState<HomographyPreview | null>(null);
@@ -223,26 +281,29 @@ export function CalibratePage() {
         if (cfg.raw_yaml) setRawYaml(cfg.raw_yaml);
         if (!cfg) return;
 
-        // 1. Homography / Speeding zones (Nap toan bo cac vung toc do SPEED_1, SPEED_2...)
+        // 1. Homography / Speeding zones (Nap ca duong cong Spline & duong thang Homography)
         const rawSpeedPolys = (cfg.polygons || []).filter(
-          (p: any) => p.homography?.src?.length === 4 || p.rules?.speeding || p.id?.startsWith("SPEED_")
+          (p: any) => p.homography?.src?.length === 4 || p.centerline?.points?.length >= 2 || p.rules?.speeding || p.id?.startsWith("SPEED_")
         );
         const parsedSpeedZones: SpeedZone[] = rawSpeedPolys.map((p: any, idx: number) => {
+          const isSpline = Boolean(p.centerline?.points?.length >= 2);
           const src = p.homography?.src || p.polygon || [];
           const dst = p.homography?.dst || [];
-          let w = 7.5;
-          let l = 50.0;
+          let w = 3.5;
+          let l = p.centerline?.length_m || 50.0;
           if (dst && dst.length === 4) {
-            w = Math.round(Math.abs(dst[1][0] - dst[0][0]) * 10) / 10 || 7.5;
+            w = Math.round(Math.abs(dst[1][0] - dst[0][0]) * 10) / 10 || 3.5;
             l = Math.round(Math.abs(dst[2][1] - dst[1][1]) * 10) / 10 || 50.0;
           }
           const spLimit = p.rules?.speeding?.limit_kmh || p.rules?.speeding?.speed_limit_kmh || 50;
           return {
             id: p.id || `SPEED_${idx + 1}`,
-            polygon: src,
+            polygon: p.polygon || src,
             width_m: w,
             length_m: l,
             limit_kmh: spLimit,
+            mode: isSpline ? "spline" : "homography",
+            centerline: p.centerline,
           };
         });
         setSpeedZones(parsedSpeedZones);
@@ -350,7 +411,11 @@ export function CalibratePage() {
   const addPoint = useCallback(
     (p: number[]) => {
       if (activeRule === "speeding") {
-        setRectPts((v) => (v.length >= 4 ? v : [...v, p]));
+        if (speedCalibMode === "spline") {
+          setSplinePts((v) => [...v, p]);
+        } else {
+          setRectPts((v) => (v.length >= 4 ? v : [...v, p]));
+        }
       } else if (activeRule === "red_light") {
         if (drawSubMode === "stop") {
           setStopPts((v) => (v.length >= 2 ? v : [...v, p]));
@@ -364,7 +429,7 @@ export function CalibratePage() {
         setDraftPoly((v) => [...v, p]);
       }
     },
-    [activeRule, drawSubMode]
+    [activeRule, drawSubMode, speedCalibMode]
   );
 
   function onSvgClick(e: React.MouseEvent) {
@@ -377,7 +442,11 @@ export function CalibratePage() {
 
   function undoPoint() {
     if (activeRule === "speeding") {
-      setRectPts((v) => v.slice(0, -1));
+      if (speedCalibMode === "spline") {
+        setSplinePts((v) => v.slice(0, -1));
+      } else {
+        setRectPts((v) => v.slice(0, -1));
+      }
     } else if (activeRule === "red_light") {
       if (drawSubMode === "stop") setStopPts((v) => v.slice(0, -1));
       else setLightPts((v) => v.slice(0, -1));
@@ -390,6 +459,7 @@ export function CalibratePage() {
 
   function resetCurrentRule() {
     if (activeRule === "speeding") {
+      setSplinePts([]);
       setRectPts([]);
       setPreview(null);
     } else if (activeRule === "red_light") {
@@ -459,15 +529,24 @@ export function CalibratePage() {
 
   function startEditSpeedZone(zone: SpeedZone) {
     setEditingSpeedZoneId(zone.id);
-    setRectPts(zone.polygon);
-    setWidthM(zone.width_m);
-    setLengthM(zone.length_m);
-    setSpeedLimit(zone.limit_kmh);
+    if (zone.mode === "spline" || zone.centerline) {
+      setSpeedCalibMode("spline");
+      setSplinePts(zone.centerline?.points || []);
+      setLengthM(zone.length_m);
+      setSpeedLimit(zone.limit_kmh);
+    } else {
+      setSpeedCalibMode("homography");
+      setRectPts(zone.polygon);
+      setWidthM(zone.width_m);
+      setLengthM(zone.length_m);
+      setSpeedLimit(zone.limit_kmh);
+    }
     setSyncStatus(`Đang chỉnh sửa vùng đo tốc độ: ${zone.id}`);
   }
 
   function cancelEditSpeedZone() {
     setEditingSpeedZoneId(null);
+    setSplinePts([]);
     setRectPts([]);
     setSyncStatus("");
   }
@@ -479,6 +558,7 @@ export function CalibratePage() {
       setSpeedZones((prev) => prev.filter((z) => z.id !== id));
       if (editingSpeedZoneId === id) {
         setEditingSpeedZoneId(null);
+        setSplinePts([]);
         setRectPts([]);
       }
       setSyncStatus(`✓ Đã xóa vùng tốc độ ${id} khỏi active.yaml!`);
@@ -490,7 +570,8 @@ export function CalibratePage() {
   }
 
   async function saveSpeedingZone() {
-    if (rectPts.length !== 4) return;
+    if (speedCalibMode === "spline" && splinePts.length < 2) return;
+    if (speedCalibMode === "homography" && rectPts.length !== 4) return;
     setError("");
     setSyncStatus("");
 
@@ -502,44 +583,68 @@ export function CalibratePage() {
       targetId = `SPEED_${idx}`;
     }
 
-    const world = [
-      [0.0, 0.0],
-      [widthM, 0.0],
-      [widthM, lengthM],
-      [0.0, lengthM],
-    ];
-
-    const polyPayload: any = {
-      id: targetId,
-      kind: "directional",
-      polygon: rectPts,
-      rules: {
-        speeding: {
-          enable: true,
-          limit_kmh: speedLimit,
+    let polyPayload: any;
+    if (speedCalibMode === "spline") {
+      const corridor = buildSplineCorridor(splinePts, corridorWidthPx);
+      polyPayload = {
+        id: targetId,
+        kind: "directional",
+        polygon: corridor,
+        centerline: {
+          points: splinePts,
+          length_m: lengthM,
         },
-      },
-      homography: {
-        src: rectPts,
-        dst: world,
-        measured_at: new Date().toISOString(),
-      },
-    };
+        rules: {
+          speeding: {
+            enable: true,
+            limit_kmh: speedLimit,
+            mode: "spline",
+          },
+        },
+      };
+    } else {
+      const world = [
+        [0.0, 0.0],
+        [widthM, 0.0],
+        [widthM, lengthM],
+        [0.0, lengthM],
+      ];
+      polyPayload = {
+        id: targetId,
+        kind: "directional",
+        polygon: rectPts,
+        rules: {
+          speeding: {
+            enable: true,
+            limit_kmh: speedLimit,
+          },
+        },
+        homography: {
+          src: rectPts,
+          dst: world,
+          measured_at: new Date().toISOString(),
+        },
+      };
+    }
+
     try {
       await api.saveCameraPolygon(cameraId, polyPayload);
       setSpeedZones((prev) => [
         ...prev.filter((z) => z.id !== targetId),
         {
           id: targetId!,
-          polygon: rectPts,
+          polygon: polyPayload.polygon,
           width_m: widthM,
           length_m: lengthM,
           limit_kmh: speedLimit,
+          mode: speedCalibMode,
+          centerline: polyPayload.centerline,
         },
       ]);
+      setSplinePts([]);
       setRectPts([]);
       setEditingSpeedZoneId(null);
-      setSyncStatus(`✓ Đã ghi vùng tốc độ ${targetId} (${widthM}m x ${lengthM}m, ${speedLimit}km/h) vào active.yaml!`);
+      setSyncStatus(`✓ Đã ghi vùng tốc độ ${targetId} (${speedCalibMode === "spline" ? "đường cong/spline" : "4 góc"}, ${lengthM}m, ${speedLimit}km/h) vào active.yaml!`);
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
     } catch (err) {
@@ -1057,7 +1162,7 @@ export function CalibratePage() {
                     ))}
                   </g>
 
-                  {/* 1. Saved Speeding Zones (Nhung vung da luu theo tung lan) */}
+                  {/* 1. Saved Speeding Zones (Nhung vung da luu theo tung lan - Ho tro ca Spline & H) */}
                   {speedZones.map((z) => {
                     if (editingSpeedZoneId === z.id) return null;
                     const midX = z.polygon.reduce((sum, pt) => sum + pt[0], 0) / (z.polygon.length || 1);
@@ -1068,13 +1173,21 @@ export function CalibratePage() {
                           points={z.polygon.map((p) => p.join(",")).join(" ")}
                           fill="rgba(217, 70, 239, 0.14)"
                           stroke="#d946ef"
-                          strokeWidth={2.5}
+                          strokeWidth={2}
                           strokeDasharray="5 3"
                         />
+                        {z.centerline?.points && z.centerline.points.length >= 2 && (
+                          <path
+                            d={getSplinePath(z.centerline.points)}
+                            stroke="#d946ef"
+                            strokeWidth={3}
+                            fill="none"
+                          />
+                        )}
                         <rect
-                          x={midX - 48}
+                          x={midX - 55}
                           y={midY - 12}
-                          width={96}
+                          width={110}
                           height={22}
                           fill="rgba(15, 23, 42, 0.88)"
                           stroke="#d946ef"
@@ -1089,29 +1202,64 @@ export function CalibratePage() {
                           fontWeight={700}
                           textAnchor="middle"
                         >
-                          {z.id}: {z.limit_kmh}km/h
+                          {z.id}: {z.limit_kmh}km/h {z.mode === "spline" ? "(cong)" : ""}
                         </text>
                       </g>
                     );
                   })}
 
-                  {/* 1.2. Draft Speeding Polygon (Vung dang cham / dang sua) */}
-                  {rectPts.length > 1 && (
-                    <polygon
-                      points={rectPts.map((p) => p.join(",")).join(" ")}
-                      fill="rgba(217, 70, 239, 0.22)"
-                      stroke="#d946ef"
-                      strokeWidth={3}
-                    />
-                  )}
-                  {rectPts.map((p, i) => (
-                    <g key={`rect-pt-${i}`}>
-                      <circle cx={p[0]} cy={p[1]} r={8} fill="#d946ef" stroke="#fff" strokeWidth={2} />
-                      <text x={p[0] + 10} y={p[1] - 8} fill="#d946ef" fontSize={20} fontWeight={700}>
-                        P{i + 1}
-                      </text>
+                  {/* 1.2. Draft Spline Speeding Curve & Corridor */}
+                  {speedCalibMode === "spline" && (
+                    <g>
+                      {splinePts.length >= 2 && (
+                        <polygon
+                          points={buildSplineCorridor(splinePts, corridorWidthPx).map((p) => p.join(",")).join(" ")}
+                          fill="rgba(217, 70, 239, 0.16)"
+                          stroke="#d946ef"
+                          strokeWidth={2}
+                          strokeDasharray="4 2"
+                        />
+                      )}
+                      {splinePts.length >= 2 && (
+                        <path
+                          d={getSplinePath(splinePts)}
+                          stroke="#d946ef"
+                          strokeWidth={3.5}
+                          fill="none"
+                        />
+                      )}
+                      {splinePts.map((p, i) => (
+                        <g key={`spline-pt-${i}`}>
+                          <circle cx={p[0]} cy={p[1]} r={8} fill="#d946ef" stroke="#fff" strokeWidth={2} />
+                          <text x={p[0] + 10} y={p[1] - 8} fill="#d946ef" fontSize={18} fontWeight={700}>
+                            C{i + 1}
+                          </text>
+                        </g>
+                      ))}
                     </g>
-                  ))}
+                  )}
+
+                  {/* 1.3. Draft Homography 4-corner Speeding Polygon */}
+                  {speedCalibMode === "homography" && (
+                    <g>
+                      {rectPts.length > 1 && (
+                        <polygon
+                          points={rectPts.map((p) => p.join(",")).join(" ")}
+                          fill="rgba(217, 70, 239, 0.22)"
+                          stroke="#d946ef"
+                          strokeWidth={3}
+                        />
+                      )}
+                      {rectPts.map((p, i) => (
+                        <g key={`rect-pt-${i}`}>
+                          <circle cx={p[0]} cy={p[1]} r={8} fill="#d946ef" stroke="#fff" strokeWidth={2} />
+                          <text x={p[0] + 10} y={p[1] - 8} fill="#d946ef" fontSize={20} fontWeight={700}>
+                            P{i + 1}
+                          </text>
+                        </g>
+                      ))}
+                    </g>
+                  )}
 
                   {/* 2. Saved Stop Lines (Cac vach dung da luu theo tung lan) */}
                   {stopLines.map((ln) => (
@@ -1485,6 +1633,38 @@ export function CalibratePage() {
                 {/* Rule Specific Workspace */}
                 {m.key === "speeding" && (
                   <div className="calib-fields">
+                    {/* Toggle che do: Duong cong (Spline) hoac Duong thang (Homography 4 goc) */}
+                    <div style={{ display: "flex", gap: "6px", marginBottom: "4px" }}>
+                      <button
+                        type="button"
+                        className={`button ${speedCalibMode === "spline" ? "button-primary" : "button-secondary"}`}
+                        onClick={() => setSpeedCalibMode("spline")}
+                        style={{
+                          flex: 1,
+                          padding: "5px 6px",
+                          fontSize: "11px",
+                          fontWeight: speedCalibMode === "spline" ? 700 : 400,
+                          background: speedCalibMode === "spline" ? "#d946ef" : undefined,
+                        }}
+                      >
+                        〰️ Đường cong (Spline)
+                      </button>
+                      <button
+                        type="button"
+                        className={`button ${speedCalibMode === "homography" ? "button-primary" : "button-secondary"}`}
+                        onClick={() => setSpeedCalibMode("homography")}
+                        style={{
+                          flex: 1,
+                          padding: "5px 6px",
+                          fontSize: "11px",
+                          fontWeight: speedCalibMode === "homography" ? 700 : 400,
+                          background: speedCalibMode === "homography" ? "#d946ef" : undefined,
+                        }}
+                      >
+                        ⬡ 4 Góc phẳng (H)
+                      </button>
+                    </div>
+
                     {editingSpeedZoneId ? (
                       <div style={{
                         display: "flex",
@@ -1508,66 +1688,108 @@ export function CalibratePage() {
                           Hủy / Vẽ mới
                         </button>
                       </div>
+                    ) : speedCalibMode === "spline" ? (
+                      <div style={{ fontSize: "11px", color: "var(--muted)", lineHeight: 1.4 }}>
+                        Chấm các điểm <b>C1 → C2 → C3...</b> dọc theo tim làn đường (thẳng: 2 điểm; cong: 3–6 điểm uốn lượn).
+                      </div>
                     ) : (
                       <div style={{ fontSize: "11px", color: "var(--muted)", lineHeight: 1.4 }}>
                         Thứ tự chấm 4 điểm góc: <b>P1 (đáy trái) → P2 (đáy phải) → P3 (đỉnh phải) → P4 (đỉnh trái)</b>.
                       </div>
                     )}
 
-                    {/* Kích thước thực tế: bố cục 2 cột rộng rãi, không bị tràn ngang */}
-                    <div className="calib-grid-2">
-                      <label>
-                        <span>Chiều rộng làn (m)</span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={widthM}
-                          onChange={(e) => setWidthM(+e.target.value)}
-                        />
-                      </label>
-                      <label>
-                        <span>Chiều dài đoạn (m)</span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={lengthM}
-                          onChange={(e) => setLengthM(+e.target.value)}
-                        />
-                      </label>
-                    </div>
-
-                    {/* Tốc độ giới hạn: 1 hàng riêng biệt rõ ràng */}
-                    <label>
-                      <span>Tốc độ giới hạn tối đa (km/h)</span>
-                      <input
-                        type="number"
-                        value={speedLimit}
-                        onChange={(e) => setSpeedLimit(+e.target.value)}
-                      />
-                    </label>
-
-                    {preview && (
-                      <div className={`calib-preview ${preview.ok ? "ok" : "warn"}`} style={{ padding: "5px 8px", fontSize: "11px" }}>
-                        {preview.ok ? "✓ " : "⚠️ "}
-                        {preview.message}
-                      </div>
+                    {speedCalibMode === "spline" ? (
+                      <>
+                        <div className="calib-grid-2">
+                          <label>
+                            <span>Chiều dài đoạn cong (m)</span>
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={lengthM}
+                              onChange={(e) => setLengthM(+e.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Độ rộng làn vẽ (px)</span>
+                            <input
+                              type="number"
+                              step="5"
+                              value={corridorWidthPx}
+                              onChange={(e) => setCorridorWidthPx(+e.target.value)}
+                            />
+                          </label>
+                        </div>
+                        <label>
+                          <span>Tốc độ giới hạn tối đa (km/h)</span>
+                          <input
+                            type="number"
+                            value={speedLimit}
+                            onChange={(e) => setSpeedLimit(+e.target.value)}
+                          />
+                        </label>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "var(--muted)" }}>
+                          <span>Điểm tim đường: <b style={{ color: splinePts.length >= 2 ? "var(--emerald)" : "inherit" }}>{splinePts.length} điểm</b></span>
+                          {splinePts.length >= 2 ? (
+                            <span style={{ color: "var(--emerald)", fontWeight: 600 }}>✓ Sẵn sàng đường cong Spline</span>
+                          ) : (
+                            <span style={{ color: "var(--muted)" }}>Cần tối thiểu 2 điểm</span>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="calib-grid-2">
+                          <label>
+                            <span>Chiều rộng làn (m)</span>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={widthM}
+                              onChange={(e) => setWidthM(+e.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Chiều dài đoạn (m)</span>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={lengthM}
+                              onChange={(e) => setLengthM(+e.target.value)}
+                            />
+                          </label>
+                        </div>
+                        <label>
+                          <span>Tốc độ giới hạn tối đa (km/h)</span>
+                          <input
+                            type="number"
+                            value={speedLimit}
+                            onChange={(e) => setSpeedLimit(+e.target.value)}
+                          />
+                        </label>
+                        {preview && (
+                          <div className={`calib-preview ${preview.ok ? "ok" : "warn"}`} style={{ padding: "5px 8px", fontSize: "11px" }}>
+                            {preview.ok ? "✓ " : "⚠️ "}
+                            {preview.message}
+                          </div>
+                        )}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "var(--muted)" }}>
+                          <span>Điểm góc mặt đường: <b style={{ color: rectPts.length === 4 ? "var(--emerald)" : "inherit" }}>{rectPts.length}/4</b></span>
+                          {rectPts.length === 4 ? (
+                            <span style={{ color: "var(--emerald)", fontWeight: 600 }}>✓ Sẵn sàng Homography</span>
+                          ) : (
+                            <span style={{ color: "var(--muted)" }}>Cần đủ 4 điểm</span>
+                          )}
+                        </div>
+                      </>
                     )}
-
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "var(--muted)" }}>
-                      <span>Điểm góc mặt đường: <b style={{ color: rectPts.length === 4 ? "var(--emerald)" : "inherit" }}>{rectPts.length}/4</b></span>
-                      {rectPts.length === 4 ? (
-                        <span style={{ color: "var(--emerald)", fontWeight: 600 }}>✓ Đã sẵn sàng Homography</span>
-                      ) : (
-                        <span style={{ color: "var(--muted)" }}>Cần đủ 4 điểm</span>
-                      )}
-                    </div>
 
                     {/* Nút hành động: hiển thị đầy đủ, không bị khuất, không cần thanh lăn ngang */}
                     <div style={{ marginTop: "4px" }}>
                       <button
                         type="button"
                         className="button button-primary"
-                        disabled={rectPts.length !== 4}
+                        disabled={speedCalibMode === "spline" ? splinePts.length < 2 : rectPts.length !== 4}
                         onClick={saveSpeedingZone}
                         style={{
                           width: "100%",

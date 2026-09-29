@@ -162,6 +162,16 @@ def normalize(cfg):
             p.setdefault("banned_classes", [])
             p.setdefault("active_hours", [])
             p.setdefault("dwell_s", 2.0)
+        if p.get("centerline") is not None and p["id"] != IMPLICIT_ID:
+            from ..utils.spline_road import CenterlineSpline
+            cl = p.get("centerline") or {}
+            pts = cl.get("points") or []
+            length_m = float(cl.get("length_m", 50.0))
+            stations = cl.get("stations")
+            if len(pts) >= 2:
+                p["_spline"] = CenterlineSpline(points=pts, length_m=length_m, stations=stations)
+                p["_road_dir"] = [0.0, 1.0]
+                p["_H_error"] = 0.0
         if p.get("homography") is not None and p["id"] != IMPLICIT_ID:
             p["_H"], p["_H_error"], p["_road_dir"] = _build_polygon_H(cfg, p)
         wins = []
@@ -267,12 +277,11 @@ def validate(cfg):
                 raise ConfigError(f"{pid}: polygon khong hop le")
         if r.get("wrong_way") and not ndir and p["id"] != IMPLICIT_ID:
             raise ConfigError(f"{pid}: wrong_way bat nhung thieu directed line")
-        if r.get("speeding") and p.get("_H") is None \
+        if r.get("speeding") and p.get("_H") is None and p.get("_spline") is None \
                 and p["id"] != IMPLICIT_ID:
             raise ConfigError(
-                f"{pid}: speeding bat nhung chua hieu chuan homography "
-                "(them 'homography: {{src, dst}}' + 'road_dir', "
-                "xem tool hieu chuan phim c)")
+                f"{pid}: speeding bat nhung chua hieu chuan homography hoac centerline spline "
+                "(them 'homography' hoac 'centerline', xem tool hieu chuan)")
         if r.get("red_light_running") or r.get("stop_line_violation") or r.get("stop_line"):
             sig_lines = [ln for ln in ndir if ln.get("signal_id")]
             if not sig_lines:

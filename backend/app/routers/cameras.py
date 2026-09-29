@@ -361,6 +361,8 @@ def save_camera_polygon(camera_id: str, poly: dict = Body(...), db: Session = De
         # merge to preserve homography if not supplied
         if "homography" in existing and "homography" not in poly:
             poly["homography"] = existing["homography"]
+        if "centerline" in existing and "centerline" not in poly:
+            poly["centerline"] = existing["centerline"]
         polygons[idx] = poly
     else:
         polygons.append(poly)
