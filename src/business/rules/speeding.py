@@ -22,13 +22,13 @@ class SpeedingRule(BaseRule):
 
     TYPE = "speeding"
     PARAMS = {"limit_kmh": 80.0, "window_size": 10, "smooth_window_s": 0.8, #speed 80
-              "min_track_frames": 20, "min_bbox_height": 15.0,
+              "min_track_frames": 5, "min_bbox_height": 15.0,
               "max_speed_kmh": 250.0, "sustain_s": 1.0, #max_speed 250
               "max_background_shift_px": 2.0, "measure": "longitudinal",
               "min_hits": 3, "cooldown_s": 10.0, "mode": "spline"}
 
     def __init__(self, limit_kmh=80.0, window_size=10, smooth_window_s=0.8,
-                 min_track_frames=20, min_bbox_height=15.0,
+                 min_track_frames=5, min_bbox_height=15.0,
                  max_speed_kmh=250.0, sustain_s=1.0,
                  max_background_shift_px=2.0, measure="longitudinal",
                  min_hits=3, cooldown_s=10.0, mode="spline"):
