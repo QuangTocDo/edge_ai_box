@@ -5,13 +5,23 @@ Tach biet hoan toan khoi pipeline core giup headless chay nhe va de unit test.
 from typing import Any, Dict, List, Optional
 import math
 import cv2
+import numpy as np
 from ..utils.geometry import allowed_vec
 from ..utils.vehicle import vehicle_name
 
 ARROW_LEN = 60
+# Modern high-tech palette (BGR format for OpenCV, matched with Dashboard)
+# Emerald (#10b981), Vivid Cyan (#06b6d4), Indigo (#6366f1), Amber (#f59e0b),
+# Violet (#8b5cf6), Teal (#14b8a6), Coral Rose (#f43f5e)
 COLORS = [
-    (0, 255, 0), (255, 0, 0), (0, 0, 255), (0, 255, 255),
-    (255, 0, 255), (255, 255, 0), (0, 128, 255), (128, 0, 255),
+    (212, 182, 6),    # Cyan (#06b6d4)
+    (241, 102, 99),   # Indigo (#6366f1)
+    (129, 185, 16),   # Emerald (#10b981)
+    (11, 158, 245),   # Amber (#f59e0b)
+    (246, 92, 139),   # Violet (#8b5cf6)
+    (166, 184, 20),   # Teal (#14b8a6)
+    (94, 63, 244),    # Coral (#f43f5e)
+    (230, 200, 100),  # Sky blue
 ]
 
 
@@ -48,39 +58,75 @@ def draw_overlay(img, tracks, lines, polygons, fps, counts, frame_idx,
         cv2.putText(img, f"{sid}:{s['state']}", (x1, max(0, y1 - 8)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
 
-    # 2. Ve cac vung da giac (polygons)
+    # 2. Ve cac vung da giac (polygons) voi translucent alpha overlay
+    poly_overlay = img.copy()
+    valid_polys = []
     for p in polygons:
         pts = [(int(x), int(y)) for x, y in (p.get("polygon") or [])]
         if len(pts) >= 3:
             pid = p.get("id", "")
+            rules = p.get("rules") or {}
             g_status = (gathering_zones or {}).get(pid)
+            
+            # Mau sac dong bo voi Dashboard
             if g_status and g_status.get("gathering"):
-                # Dang co tu tap dong nguoi: vien vang cam/do noi bat va vien day hon
                 is_violated = g_status.get("violated", False) or g_status.get("fired", False)
-                col = (0, 0, 255) if is_violated else (0, 165, 255)
-                thick = 3
+                col = (94, 63, 244) if is_violated else (11, 158, 245)
+            elif "speeding" in rules or "homography" in p:
+                col = (129, 185, 16)  # Emerald green
+            elif "no_uturn" in rules:
+                col = (246, 92, 139)  # Violet
+            elif "no_entry_road" in rules or p.get("kind") == "banned":
+                col = (94, 63, 244)   # Coral rose
+            elif "no_parking" in rules:
+                col = (241, 102, 99)   # Indigo
+            elif "no_gathering" in rules:
+                col = (166, 184, 20)   # Teal
             else:
-                col = (0, 0, 255) if p.get("kind") == "banned" else (0, 255, 0)
-                thick = 2
+                col = (212, 182, 6)    # Cyan
 
-            for a, b in zip(pts, pts[1:] + pts[:1]):
-                cv2.line(img, a, b, col, thick)
+            pts_arr = np.array([pts], dtype=np.int32)
+            cv2.fillPoly(poly_overlay, pts_arr, col)
+            valid_polys.append((p, pts, pid, rules, g_status, col))
 
-            # Hien thi ten polygon va thong so dem so nguoi / tu tap neu co
-            poly_label = pid
-            if g_status:
-                cnt = g_status.get("count", 0)
-                min_p = g_status.get("min_persons", 2)
-                dw = g_status.get("dwell_s", 0.0)
-                tdw = g_status.get("target_dwell_s", 3.0)
-                if g_status.get("violated"):
-                    poly_label += f" [{cnt}/{min_p}p REC CLIP!]"
-                elif cnt >= min_p:
-                    poly_label += f" [{cnt}/{min_p}p {dw:.1f}/{tdw:.0f}s!]"
-                else:
-                    poly_label += f" [{cnt}/{min_p}p]"
-            cv2.putText(img, poly_label, pts[0],
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+    if valid_polys:
+        # Alpha blend tao hieu ung kinh mo hien dai
+        cv2.addWeighted(poly_overlay, 0.15, img, 0.85, 0, img)
+
+    # Ve duong vien sac net va nhan dan
+    for p, pts, pid, rules, g_status, col in valid_polys:
+        thick = 3 if (g_status and g_status.get("gathering")) else 2
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            cv2.line(img, a, b, col, thick, cv2.LINE_AA)
+
+        # Ve mui ten huong luu thong neu co road_dir
+        road_dir = p.get("road_dir")
+        if road_dir and len(road_dir) == 2:
+            cx = sum(x for x, y in pts) // len(pts)
+            cy = sum(y for x, y in pts) // len(pts)
+            dx, dy = int(road_dir[0] * 50), int(road_dir[1] * 50)
+            cv2.arrowedLine(img, (cx, cy), (cx + dx, cy + dy), col, 2, cv2.LINE_AA, tipLength=0.35)
+
+        # Nhan dan vung da giac
+        poly_label = pid
+        if g_status:
+            cnt = g_status.get("count", 0)
+            min_p = g_status.get("min_persons", 2)
+            dw = g_status.get("dwell_s", 0.0)
+            tdw = g_status.get("target_dwell_s", 3.0)
+            if g_status.get("violated"):
+                poly_label += f" [{cnt}/{min_p}p REC CLIP!]"
+            elif cnt >= min_p:
+                poly_label += f" [{cnt}/{min_p}p {dw:.1f}/{tdw:.0f}s!]"
+            else:
+                poly_label += f" [{cnt}/{min_p}p]"
+        
+        lx, ly = pts[0]
+        (tw, th), _ = cv2.getTextSize(poly_label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+        cv2.rectangle(img, (lx, max(0, ly - th - 8)), (lx + tw + 8, ly + 2), (15, 23, 42), -1)
+        cv2.rectangle(img, (lx, max(0, ly - th - 8)), (lx + tw + 8, ly + 2), col, 1, cv2.LINE_AA)
+        cv2.putText(img, poly_label, (lx + 4, max(0, ly - 4)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
     # 3. Ve cac vach ao (lines)
     for ln in lines:

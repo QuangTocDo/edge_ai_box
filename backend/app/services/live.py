@@ -21,7 +21,7 @@ from ..database import SessionLocal
 from ..models import Camera, CameraEvent
 from ..websocket import manager
 from .processing import render_evidence_frame, safe_json_dumps
-from .sources import VideoSource, build_source
+from .sources import FileLoopSource, VideoSource, build_source
 
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -153,10 +153,15 @@ class LiveCameraWorker:
                 ret, frame = cap.read()
                 if not ret or frame is None:
                     # Video files loop; RTSP drops indicate stream ended
-                    if getattr(self.source, "is_finite", False):
+                    if isinstance(self.source, FileLoopSource) or getattr(self.source, "is_finite", False):
                         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                        continue
-                    raise RuntimeError("Stream read returned empty frame")
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            pass
+                        else:
+                            raise RuntimeError("Stream read returned empty frame after rewinding")
+                    else:
+                        raise RuntimeError("Stream read returned empty frame")
 
                 now = time.time()
                 dt = now - last_t
@@ -169,11 +174,16 @@ class LiveCameraWorker:
                 self.processed_frames = frame_idx
                 time_s = frame_idx / (self.measured_fps or self.fps_hint)
 
-                tracks, new_events = engine.process_frame(
+                result = engine.process_frame(
                     frame,
                     frame_idx=frame_idx,
                     t_video=time_s,
                 )
+                if isinstance(result, dict):
+                    tracks = result.get("tracks", {})
+                    new_events = result.get("events", [])
+                else:
+                    tracks, new_events = result
 
                 self.active_vehicles = len(tracks)
 

@@ -10,7 +10,7 @@ from . import auth
 from .config import ensure_data_dirs
 from .database import Base, SessionLocal, engine
 from .models import ProcessingJob
-from .routers import analytics, cameras, events, jobs, videos
+from .routers import analytics, cameras, events, jobs, objects, videos
 from .services.live import registry, ws_key
 from .services.processing import enqueue_job
 from .websocket import manager
@@ -66,6 +66,7 @@ app.include_router(events.router)
 app.include_router(videos.router)
 app.include_router(cameras.router)
 app.include_router(analytics.router)
+app.include_router(objects.router)
 
 
 @app.get("/api/health")
@@ -96,4 +97,3 @@ async def camera_socket(websocket: WebSocket, camera_id: str):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(key, websocket)
-

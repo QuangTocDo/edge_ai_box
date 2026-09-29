@@ -10,6 +10,7 @@ import { EventDetailPage } from "./pages/EventDetailPage";
 import { JobDetailPage } from "./pages/JobDetailPage";
 import { JobsPage } from "./pages/JobsPage";
 import { LoginPage } from "./pages/LoginPage";
+import { ObjectsPage } from "./pages/ObjectsPage";
 import { OverviewPage } from "./pages/OverviewPage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -21,8 +22,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
 function ProtectedApp() {
   return (
-    <RequireAuth>
-      <Layout>
+    <RequireAuth>\n      <Layout>
         <Routes>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/jobs" element={<JobsPage />} />
@@ -31,6 +31,7 @@ function ProtectedApp() {
           <Route path="/cameras" element={<CamerasPage />} />
           <Route path="/cameras/:cameraId" element={<CameraDetailPage />} />
           <Route path="/cameras/:cameraId/calibrate" element={<CalibratePage />} />
+          <Route path="/objects" element={<ObjectsPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
         </Routes>
       </Layout>

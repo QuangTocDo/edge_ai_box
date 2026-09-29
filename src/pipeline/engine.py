@@ -267,9 +267,9 @@ class TrafficPipelineEngine:
         touch_heartbeat(self.heartbeat_file)
         self.is_setup = True
 
-    def process_frame(self, frame, frame_idx: int) -> Dict[str, Any]:
+    def process_frame(self, frame, frame_idx: int, t_video: Optional[float] = None) -> Dict[str, Any]:
         """Xu ly 1 khung hinh qua toan bo pipeline: tracker -> rules -> evidence -> async ped."""
-        t = frame_idx / self.fps_src
+        t = t_video if t_video is not None else (frame_idx / self.fps_src)
         if frame_idx % int(self.fps_src) == 1:
             self.wall_min = now_minutes(self.tz)
             self.date_str = today_str(self.tz)

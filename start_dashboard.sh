@@ -25,7 +25,7 @@ trap cleanup EXIT INT TERM
 
 cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR"
-"$ROOT_DIR/.venv/bin/python" -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 &
+"$ROOT_DIR/.venv/bin/python" -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload &
 API_PID=$!
 
 echo "Waiting for API gateway to become ready..."

@@ -112,3 +112,28 @@ export interface Overview {
   severity_counts: Record<string, number>;
   recent_events: ViolationEvent[];
 }
+
+export interface DetectedVehicle {
+  track_id: number;
+  camera_id: string;
+  date: string;
+  vehicle_type: string;
+  color: string;
+  color_conf: number;
+  secondary_color?: string | null;
+  secondary_conf?: number | null;
+  best_conf: number;
+  best_bbox?: number[] | null;
+  crop_path: string;
+  crop_url?: string | null;
+  first_seen: number;
+  last_seen: number;
+  frames: number;
+}
+
+export interface VehicleStats {
+  total_objects: number;
+  types: { type: string; count: number }[];
+  colors: { color: string; count: number }[];
+  dates: { date: string; count: number }[];
+}

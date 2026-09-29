@@ -1,6 +1,6 @@
 import {
   BarChart3,
-  Camera,
+  CarFront,
   Clock,
   FileVideo2,
   LayoutDashboard,
@@ -21,6 +21,7 @@ const nav = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
   { to: "/jobs", label: "Video Jobs", icon: FileVideo2 },
   { to: "/cameras", label: "Live Cameras", icon: Radio },
+  { to: "/objects", label: "Vehicle Explorer", icon: CarFront },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -59,73 +60,66 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
+      {/* Sidebar */}
       <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
         <div className="brand-row">
           <div className="brand-mark">
-            <Camera size={20} />
+            <ShieldCheck size={22} />
           </div>
           <div className="brand-text">
             <strong>SignalWatch AI</strong>
-            <span>Traffic Vision Ops</span>
+            <span>Traffic Operations</span>
           </div>
           <button
-            className="icon-button sidebar-close"
+            className="sidebar-close"
             onClick={() => setOpen(false)}
             aria-label="Close navigation"
           >
-            <X size={19} />
+            <X size={18} />
           </button>
         </div>
 
         <nav className="main-nav">
-          <span className="nav-label">Operations Console</span>
-          {nav.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === "/"}
-              onClick={() => setOpen(false)}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
+          <span className="nav-label">Monitoring</span>
+          {nav.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === "/"}
+                className={({ isActive }) => (isActive ? "active" : "")}
+                onClick={() => setOpen(false)}
+              >
+                <Icon size={18} />
+                <span>{item.label}</span>
+              </NavLink>
+            );
+          })}
         </nav>
 
         <div className="account-panel">
           <div className="account-row">
-            <span
-              className={`account-avatar ${
-                isAdmin ? "account-avatar-admin" : ""
-              }`}
-            >
-              {isAdmin ? <ShieldCheck size={16} /> : <User size={16} />}
-            </span>
+            <div className={`account-avatar ${isAdmin ? "account-avatar-admin" : ""}`}>
+              <User size={18} />
+            </div>
             <div className="account-meta">
-              <strong>{user?.name ?? "Operator"}</strong>
-              <span>
-                {isAdmin ? "Super Administrator" : "Operator · Read-only"}
-              </span>
+              <strong>{user?.name || "Operator"}</strong>
+              <span>{isAdmin ? "Administrator" : "Standard Operator"}</span>
             </div>
           </div>
-          <button className="account-logout" onClick={logout}>
-            <LogOut size={15} /> Sign out
+          <button className="account-logout" onClick={logout} title="Sign Out">
+            <LogOut size={14} />
+            <span>Sign Out</span>
           </button>
         </div>
       </aside>
 
-      {open && (
-        <button
-          className="sidebar-backdrop"
-          onClick={() => setOpen(false)}
-          aria-label="Close navigation"
-        />
-      )}
-
+      {/* Main Workspace */}
       <div className="workspace">
         <header className="topbar">
           <button
-            className="icon-button mobile-menu"
+            className="mobile-menu"
             onClick={() => setOpen(true)}
             aria-label="Open navigation"
           >
@@ -134,26 +128,20 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <div className="topbar-status">
             <span className="live-dot" />
-            <span className="status-text">Vision Pipeline Operational</span>
+            <span>EDGE AI ENGINE ACTIVE</span>
           </div>
 
           <div className="topbar-right">
-            {timeStr && (
-              <div className="topbar-clock">
-                <Clock size={14} />
-                <span>{timeStr}</span>
-              </div>
-            )}
+            <div className="topbar-clock">
+              <Clock size={13} />
+              <span>{timeStr}</span>
+            </div>
 
             <button
               className="theme-toggle-btn"
               onClick={toggleTheme}
-              title={
-                theme === "dark"
-                  ? "Switch to Light Mode"
-                  : "Switch to Dark Mode"
-              }
-              aria-label="Toggle theme"
+              title={`Switch to ${theme === "dark" ? "Light" : "Dark"} mode`}
+              aria-label="Toggle Theme"
             >
               {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
             </button>
@@ -162,6 +150,8 @@ export function Layout({ children }: { children: ReactNode }) {
 
         <main>{children}</main>
       </div>
+
+      {open && <button className="sidebar-backdrop" onClick={() => setOpen(false)} aria-label="Close overlay" />}
     </div>
   );
 }

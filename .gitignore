@@ -94,3 +94,10 @@ capture_*.jpg
 /data_cctv/data.yaml
 /data_v1/data.yaml
 /data_v2/data.yaml
+
+# ================= Frontend =================
+node_modules/
+*/node_modules/
+frontend/dist/
+dist/
+*.tsbuildinfo

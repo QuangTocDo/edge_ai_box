@@ -94,8 +94,12 @@ class CalibrationRectangle(BaseModel):
     # Four ground points clicked in order TL, TR, BR, BL, plus the real-world
     # size of that rectangle in metres (e.g. a lane segment: width 3.5, length 14).
     image_points: List[List[float]]
-    width_m: float
-    length_m: float
+    width_m: Optional[float] = None
+    length_m: Optional[float] = None
+    world_width_m: Optional[float] = None
+    world_length_m: Optional[float] = None
+    road_dir: Optional[List[float]] = None
+    road_dir_points: Optional[List[List[float]]] = None
 
 
 class CalibrationLane(BaseModel):
@@ -105,11 +109,33 @@ class CalibrationLane(BaseModel):
     speed_limit_kmh: float = 50
 
 
+class RuleZoneConfig(BaseModel):
+    id: str
+    rule_type: str  # speeding, wrong_way, no_uturn, no_entry_road, no_parking, no_gathering, red_light_running, stop_line_violation
+    polygon: Optional[List[List[float]]] = None
+    line: Optional[List[List[float]]] = None
+    box: Optional[List[float]] = None
+    arrow: Optional[List[List[float]]] = None
+    road_dir: Optional[List[float]] = None
+    speed_limit_kmh: Optional[float] = 50.0
+    dwell_s: Optional[float] = None
+    min_persons: Optional[int] = None
+    enabled: bool = True
+
+
+class RawConfigRequest(BaseModel):
+    yaml_content: str
+
+
 class CalibrationRequest(BaseModel):
-    rectangle: CalibrationRectangle
-    stop_line: List[List[float]]  # two image points
+    rectangle: Optional[CalibrationRectangle] = None
+    stop_line: Optional[List[List[float]]] = None  # two image points
     lanes: List[CalibrationLane] = []
     light_box: Optional[List[float]] = None  # [x1, y1, x2, y2] image pixels
+    rule_zones: Optional[List[RuleZoneConfig]] = None
+    deleted_polygon_ids: Optional[List[str]] = None
+    deleted_line_ids: Optional[List[str]] = None
+    deleted_signal_ids: Optional[List[str]] = None
 
 
 class HomographyPreview(BaseModel):

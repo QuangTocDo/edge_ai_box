@@ -1,0 +1,177 @@
+camera_id: CAM_TEST_01
+config_version: cfg_v2
+timezone: Asia/Ho_Chi_Minh
+source: assets/speed1.mp4
+model:
+  weights: weights/best_15thg9.onnx
+  conf: 0.7
+  imgsz: 1280
+  vote_interval: 20
+  classes:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  names:
+    0: motorbike
+    1: car
+    2: bus
+    3: truck
+    4: motorbike
+    5: car
+    6: bus
+    7: truck
+  tracker: ocsort.yaml
+  device: null
+polygons:
+- id: POLY_1
+  kind: directional
+  polygon:
+  - - 770
+    - 392
+  - - 906
+    - 393
+  - - 756
+    - 1003
+  - - 26
+    - 1003
+  - - 771
+    - 395
+  lines: []
+  handler:
+  - wrong_way
+  - no_uturn
+  rules:
+    wrong_way:
+      enable: false
+    no_uturn:
+      enable: false
+    no_entry_road:
+      enable: false
+    no_parking:
+      enable: false
+    no_gathering:
+      enable: false
+    red_light_running:
+      enable: false
+    stop_line_violation:
+      enable: false
+    speeding:
+      enable: true
+  homography:
+    src:
+    - - 769
+      - 391
+    - - 907
+      - 393
+    - - 757
+      - 1001
+    - - 31
+      - 1003
+    dst:
+    - - 0.0
+      - 0.0
+    - - 7.5
+      - 0.0
+    - - 7.5
+      - 50.0
+    - - 0.0
+      - 50.0
+    measured_at: '2026-09-28T11:09:57'
+  road_dir:
+  - 0.0029535695474949136
+  - 0.9999956382039513
+- id: POLY_2
+  kind: directional
+  polygon:
+  - - 1075
+    - 1003
+  - - 1778
+    - 1002
+  - - 1101
+    - 402
+  - - 958
+    - 400
+  - - 1076
+    - 1003
+  lines: []
+  handler:
+  - wrong_way
+  - no_uturn
+  rules:
+    wrong_way:
+      enable: false
+    no_uturn:
+      enable: false
+    no_entry_road:
+      enable: false
+    no_parking:
+      enable: false
+    no_gathering:
+      enable: false
+    red_light_running:
+      enable: false
+    stop_line_violation:
+      enable: false
+    speeding:
+      enable: true
+  homography:
+    src:
+    - - 1078
+      - 1003
+    - - 1779
+      - 1003
+    - - 1101
+      - 402
+    - - 960
+      - 402
+    dst:
+    - - 0.0
+      - 0.0
+    - - 7.5
+      - 0.0
+    - - 7.5
+      - 50.0
+    - - 0.0
+      - 50.0
+    measured_at: '2026-09-28T11:10:47'
+  road_dir:
+  - 0.002614733635781621
+  - 0.9999965815781642
+lines: []
+uturn_pairs: []
+wrong_way:
+  min_hits: 3
+  min_reverse_frames: 5
+  min_reverse_px: 60.0
+  cooldown_s: 10.0
+no_uturn:
+  min_hits: 3
+  cooldown_s: 10.0
+no_entry_road:
+  dwell_s: 2.0
+  min_hits: 3
+  cooldown_s: 10.0
+no_gathering:
+  min_persons: 5
+  dwell_s: 60.0
+  cooldown_s: 300.0
+  save_video: true
+  post_dwell_s: 5.0
+  max_clip_s: 30.0
+  video_fps: 6.0
+  model:
+    weights: weights/yolo26n.onnx
+    conf: 0.5
+    imgsz: 640
+    device: cpu
+    infer_interval_frames: 5
+evidence:
+  dir: evidence
+  jpeg_quality: 90
+  retention_days: 7
+signals: []

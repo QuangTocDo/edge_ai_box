@@ -11,7 +11,7 @@ Kiem tra:
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ConfigValidationError(Exception):
@@ -60,7 +60,26 @@ class PolygonSchema(BaseModel):
 
 class SignalSchema(BaseModel):
     id: str
-    roi: List[float] = Field(..., min_length=4, max_length=4)
+    roi: Optional[List[float]] = None
+    box: Optional[List[float]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_roi(cls, data: Any):
+        if isinstance(data, dict):
+            coords = data.get("roi") or data.get("box")
+            if coords is None:
+                raise ValueError("Signal phai co 'roi' hoac 'box'")
+            data["roi"] = coords
+            data["box"] = coords
+        return data
+
+    @field_validator("roi")
+    @classmethod
+    def check_roi_length(cls, v):
+        if v is None or len(v) != 4:
+            raise ValueError("roi phai co dung 4 toa do [x1, y1, x2, y2]")
+        return v
 
 
 class ModelSchema(BaseModel):

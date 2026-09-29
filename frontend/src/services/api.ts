@@ -1,4 +1,4 @@
-import type { Analytics, Camera, CameraEvent, Overview, ProcessingJob, ViolationEvent } from "../types";
+import type { Analytics, Camera, CameraEvent, DetectedVehicle, Overview, ProcessingJob, VehicleStats, ViolationEvent } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -38,13 +38,17 @@ export const api = {
   upload: async (file: File) => {
     const form = new FormData();
     form.append("video", file);
-    return request<ProcessingJob>("/api/jobs/upload", { method: "POST", body: form });
+    return request<ProcessingJob>("/api/jobs/upload", {
+      method: "POST",
+      body: form,
+    });
   },
   process: (id: string) => request<ProcessingJob>(`/api/jobs/${id}/process`, { method: "POST" }),
+  cancelJob: (id: string) => request<ProcessingJob>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   deleteJob: (id: string) => request<void>(`/api/jobs/${id}`, { method: "DELETE" }),
-
   cameras: () => request<Camera[]>("/api/cameras"),
   camera: (id: string) => request<Camera>(`/api/cameras/${id}`),
+  cameraConfig: (id: string) => request<CameraConfig>(`/api/cameras/${id}/config`),
   createCamera: (body: { name: string; source_type: string; source_uri: string }) =>
     request<Camera>("/api/cameras", {
       method: "POST",
@@ -69,15 +73,137 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+  updateRawConfig: (id: string, yaml_content: string) =>
+    request<{ status: string; message: string }>(`/api/cameras/${id}/config/raw`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ yaml_content }),
+    }),
+  deleteCameraPolygon: (id: string, polyId: string) =>
+    request<{ status: string; deleted: string }>(`/api/cameras/${id}/config/polygons/${polyId}`, {
+      method: "DELETE",
+    }),
+  deleteCameraLine: (id: string, lineId: string) =>
+    request<{ status: string; deleted: string }>(`/api/cameras/${id}/config/lines/${lineId}`, {
+      method: "DELETE",
+    }),
+  saveCameraPolygon: (id: string, poly: any) =>
+    request<{ status: string; message: string; polygon: any }>(`/api/cameras/${id}/config/polygons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(poly),
+    }),
+  saveCameraLine: (id: string, line: any) =>
+    request<{ status: string; message: string; line: any }>(`/api/cameras/${id}/config/lines`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(line),
+    }),
+  saveCameraSignal: (id: string, sig: any) =>
+    request<{ status: string; message: string; signal: any }>(`/api/cameras/${id}/config/signals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sig),
+    }),
+  deleteCameraSignal: (id: string, sigId: string) =>
+    request<{ status: string; deleted: string }>(`/api/cameras/${id}/config/signals/${sigId}`, {
+      method: "DELETE",
+    }),
+  vehicleStats: (date?: string) =>
+    request<VehicleStats>(`/api/objects/stats${date ? `?date=${encodeURIComponent(date)}` : ""}`),
+  vehicles: (params?: {
+    date?: string;
+    vehicle_type?: string;
+    color?: string;
+    camera_id?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.date) q.set("date", params.date);
+    if (params?.vehicle_type) q.set("vehicle_type", params.vehicle_type);
+    if (params?.color) q.set("color", params.color);
+    if (params?.camera_id) q.set("camera_id", params.camera_id);
+    if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.offset) q.set("offset", String(params.offset));
+    const qs = q.toString();
+    return request<{ total: number; items: DetectedVehicle[] }>(`/api/objects${qs ? `?${qs}` : ""}`);
+  },
+  deleteVehicle: (trackId: number, date?: string, camera?: string) => {
+    const q = new URLSearchParams();
+    if (date) q.set("date", date);
+    if (camera) q.set("camera", camera);
+    const qs = q.toString();
+    return request<{ status: string; deleted: number }>(`/api/objects/${trackId}${qs ? `?${qs}` : ""}`, {
+      method: "DELETE",
+    });
+  },
 };
 
-export interface CalibrationRectangle { image_points: number[][]; width_m: number; length_m: number }
+export interface CameraConfig {
+  camera_id: string;
+  config_path: string;
+  raw_yaml?: string;
+  polygons: Array<{
+    id: string;
+    kind?: string;
+    polygon?: number[][];
+    rules?: Record<string, any>;
+    homography?: { src: number[][]; dst: number[][]; measured_at?: string };
+    road_dir?: number[];
+    dwell_s?: number;
+    min_persons?: number;
+    banned_classes?: number[];
+    lines?: Array<{ id: string; p1: number[]; p2: number[]; allowed_sign?: number }>;
+    [key: string]: any;
+  }>;
+  lines: Array<{
+    id: string;
+    p1: number[];
+    p2: number[];
+    allowed_sign?: number;
+    signal_id?: string;
+    role?: string;
+    [key: string]: any;
+  }>;
+  signals: Array<{
+    id: string;
+    roi?: number[];
+    box?: number[];
+    default?: string;
+    [key: string]: any;
+  }>;
+  no_entry_road?: Record<string, any>;
+  no_gathering?: Record<string, any>;
+  no_parking?: Record<string, any>;
+  no_uturn?: Record<string, any>;
+  wrong_way?: Record<string, any>;
+  uturn_pairs?: Array<{ first: string; second: string; medial?: string; [key: string]: any }>;
+}
+
+export interface CalibrationRectangle { image_points: number[][]; width_m: number; length_m: number; road_dir?: number[]; road_dir_points?: number[][] }
 export interface CalibrationLane { id: string; polygon: number[][]; arrow: number[][]; speed_limit_kmh: number }
+export interface RuleZoneConfig {
+  id: string;
+  rule_type: string;
+  polygon?: number[][];
+  line?: number[][];
+  box?: number[];
+  arrow?: number[][];
+  speed_limit_kmh?: number;
+  dwell_s?: number;
+  min_persons?: number;
+  enabled?: boolean;
+}
 export interface CalibrationRequest {
-  rectangle: CalibrationRectangle;
-  stop_line: number[][];
-  lanes: CalibrationLane[];
-  light_box: number[] | null;
+  rectangle?: CalibrationRectangle;
+  stop_line?: number[][];
+  lanes?: CalibrationLane[];
+  light_box?: number[] | null;
+  rule_zones?: RuleZoneConfig[];
+  deleted_polygon_ids?: string[];
+  deleted_line_ids?: string[];
+  deleted_signal_ids?: string[];
 }
 export interface HomographyPreview { condition_number: number; mean_error_m: number; ok: boolean; message: string }
 
@@ -101,6 +227,11 @@ export function mediaUrl(path: string | null): string {
   return path ? `${API_BASE}${path}` : "";
 }
 
+export function cropImageUrl(path: string | null): string {
+  if (!path) return "";
+  return `${API_BASE}/api/objects/crop?path=${encodeURIComponent(path)}`;
+}
+
 export function jobVideoUrl(id: string): string {
   return `${API_BASE}/api/jobs/${id}/video`;
 }
@@ -112,4 +243,3 @@ export function websocketUrl(jobId: string): string {
   const host = window.location.port === "5173" ? `${window.location.hostname}:8000` : window.location.host;
   return `${protocol}://${host}/ws/jobs/${jobId}`;
 }
-

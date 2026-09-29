@@ -39,6 +39,8 @@ _RTSP_RE = re.compile(r"^rtsps?://", re.IGNORECASE)
 
 
 class VideoSource(ABC):
+    _cap: Optional[cv2.VideoCapture] = None
+
     @abstractmethod
     def processing_uri(self):
         """Return the value passed to cv2.VideoCapture(...)."""
@@ -52,6 +54,24 @@ class VideoSource(ABC):
     def is_endless(self) -> bool:
         """True for sources that should never naturally end (live cameras)."""
         return True
+
+    def open(self) -> cv2.VideoCapture:
+        """Open and return a cv2.VideoCapture instance."""
+        uri = self.processing_uri()
+        cap = cv2.VideoCapture(uri)
+        if not cap.isOpened():
+            raise RuntimeError(f"Could not open video source: {self.display_uri()}")
+        self._cap = cap
+        return cap
+
+    def close(self) -> None:
+        """Release the cv2.VideoCapture instance if opened."""
+        if getattr(self, "_cap", None) is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+            self._cap = None
 
 
 @dataclass

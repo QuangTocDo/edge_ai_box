@@ -1,3 +1,4 @@
+import math
 """Nap + chuan hoa + validate config camera (base + override, rules theo polygon).
 
 Schema:
@@ -125,8 +126,30 @@ def normalize(cfg):
 
     for p in cfg["polygons"]:
         rules = p.get("rules") or {}
-        # Tu dong gan signal_id neu chi co 1 signal va line chua co signal_id
         r = {k: (v or {}).get("enable", True) for k, v in rules.items()}
+        # Tu dong alias speed_limit_kmh -> limit_kmh
+        sp = (p.get("rules") or {}).get("speeding")
+        if isinstance(sp, dict) and "speed_limit_kmh" in sp:
+            sp["limit_kmh"] = sp.pop("speed_limit_kmh")
+
+        # Tu dong tao directed line cho wrong_way neu da co road_dir va polygon ma chua co line
+        if r.get("wrong_way") and not p.get("lines") and p.get("road_dir") and p.get("polygon"):
+            poly_pts = p["polygon"]
+            if len(poly_pts) >= 3:
+                cx = sum(pt[0] for pt in poly_pts) / len(poly_pts)
+                cy = sum(pt[1] for pt in poly_pts) / len(poly_pts)
+                dx, dy = float(p["road_dir"][0]), float(p["road_dir"][1])
+                px, py = -dy, dx
+                span = 80.0
+                p1 = [round(cx - px * span, 1), round(cy - py * span, 1)]
+                p2 = [round(cx + px * span, 1), round(cy + py * span, 1)]
+                p["lines"] = [{
+                    "id": f"LINE_{p['id']}",
+                    "p1": p1,
+                    "p2": p2,
+                    "allowed_sign": 1,
+                }]
+        # Tu dong gan signal_id neu chi co 1 signal va line chua co signal_id
         if r.get("red_light_running") or r.get("stop_line_violation"):
             sigs = cfg.get("signals", [])
             if len(sigs) == 1:
@@ -168,9 +191,8 @@ def _build_polygon_H(cfg, poly):
             f"{pid}: speeding can 'homography: {{src: [...], dst: [...]}}' "
             "toi thieu 4 cap diem (xem tool hieu chuan phim c)")
     if not poly.get("road_dir"):
-        raise ConfigError(
-            f"{pid}: speeding can 'road_dir: [dx, dy]' huong duong "
-            "(xem tool hieu chuan phim c)")
+        # In road metric coordinates dst: [[0,0], [w,0], [w,l], [0,l]], length is along +Y
+        poly["road_dir"] = [0.0, 1.0]
     try:
         H, inl, err = build_H(src, dst)
     except ValueError as e:
