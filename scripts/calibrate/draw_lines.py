@@ -177,7 +177,7 @@ def get_polygon_color_and_label(poly):
 
 
 def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=None, sel_signal=None,
-             calib_pts=None, calib_dir=None):
+             calib_pts=None, calib_dir=None, violation=None):
     # 1. Signals (Hop den giao thong)
     for s in cfg.get("signals", []):
         roi = s.get("roi")
@@ -192,7 +192,7 @@ def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=Non
                 cv2.addWeighted(fill_color, 0.18, sub, 0.82, 0, sub)
 
             cv2.rectangle(vis, (x1, y1), (x2, y2), col, 2, lineType=cv2.LINE_AA)
-            draw_pill_badge(vis, f"SIGNAL {s.get(id, )}", (min(x1, x2) + 4, min(y1, y2) - 6), border_col=col, font_scale=0.45)
+            draw_pill_badge(vis, f"SIGNAL {s.get('id', '')}", (min(x1, x2) + 4, min(y1, y2) - 6), border_col=col, font_scale=0.45)
 
     # 2. Khung ROI dang keo chuot
     if roi_drag and roi_drag.get("p0") is not None:
@@ -294,16 +294,38 @@ def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=Non
     # 6. Poly pts dang ve dở dang
     if poly_pts:
         pts = [(int(x), int(y)) for x, y in poly_pts]
-        for i in range(1, len(pts)):
-            cv2.line(vis, pts[i - 1], pts[i], PALETTE["speeding"], 2, lineType=cv2.LINE_AA)
-        if len(pts) >= 3:
-            pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
-            overlay = vis.copy()
-            cv2.fillPoly(overlay, [pts_arr], PALETTE["speeding"])
-            cv2.addWeighted(overlay, 0.14, vis, 0.86, 0, vis)
-            cv2.line(vis, pts[-1], pts[0], PALETTE["speeding"], 1, cv2.LINE_AA)
-        for i, pt in enumerate(pts):
-            draw_point_marker(vis, pt, PALETTE["speeding"], r=5, label=f"{i+1}")
+        if violation == "5":
+            sp_labels = ["P1 (Vao-Trai)", "P2 (Vao-Phai)", "P3 (Ra-Phai)", "P4 (Ra-Trai)"]
+            for i in range(1, len(pts)):
+                cv2.line(vis, pts[i - 1], pts[i], PALETTE["speeding"], 2, lineType=cv2.LINE_AA)
+            if len(pts) == 4:
+                cv2.line(vis, pts[3], pts[0], PALETTE["speeding"], 2, lineType=cv2.LINE_AA)
+                pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                overlay = vis.copy()
+                cv2.fillPoly(overlay, [pts_arr], PALETTE["speeding"])
+                cv2.addWeighted(overlay, 0.18, vis, 0.82, 0, vis)
+
+                # Huong xe tu dong: Trung diem (P1, P2) -> Trung diem (P3, P4)
+                m12 = ((pts[0][0] + pts[1][0]) // 2, (pts[0][1] + pts[1][1]) // 2)
+                m34 = ((pts[2][0] + pts[3][0]) // 2, (pts[2][1] + pts[3][1]) // 2)
+                cv2.arrowedLine(vis, m12, m34, PALETTE["arrow"], 3, tipLength=0.25)
+                draw_pill_badge(vis, "Huong xe tu dong", ((m12[0] + m34[0]) // 2 - 38, (m12[1] + m34[1]) // 2 - 8),
+                                border_col=PALETTE["arrow"], font_scale=0.42)
+
+            for i, pt in enumerate(pts):
+                lbl = sp_labels[i] if i < len(sp_labels) else f"P{i+1}"
+                draw_point_marker(vis, pt, PALETTE["speeding"], r=6, label=lbl, label_col=PALETTE["speeding"])
+        else:
+            for i in range(1, len(pts)):
+                cv2.line(vis, pts[i - 1], pts[i], PALETTE["speeding"], 2, lineType=cv2.LINE_AA)
+            if len(pts) >= 3:
+                pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                overlay = vis.copy()
+                cv2.fillPoly(overlay, [pts_arr], PALETTE["speeding"])
+                cv2.addWeighted(overlay, 0.14, vis, 0.86, 0, vis)
+                cv2.line(vis, pts[-1], pts[0], PALETTE["speeding"], 1, cv2.LINE_AA)
+            for i, pt in enumerate(pts):
+                draw_point_marker(vis, pt, PALETTE["speeding"], r=5, label=f"{i+1}")
 
     # 7. Calib pts dang cham (4 diem Homography)
     if calib_pts:
@@ -464,7 +486,15 @@ def main():
             return
         if tool_mode == "polygon":
             if ev == cv2.EVENT_LBUTTONDOWN:
+                if violation == "5" and len(poly_pts) >= 4:
+                    print("Da du 4 diem P1..P4 cho vung toc do. Nhan ENTER de xac nhan hoac Esc de huy.")
+                    return
                 poly_pts.append((x, y))
+                if violation == "5":
+                    sp_labels = ["P1 (Rong vao-Trai)", "P2 (Rong vao-Phai)", "P3 (Rong ra-Phai)", "P4 (Rong ra-Trai)"]
+                    print(f"  -> Da cham {sp_labels[len(poly_pts) - 1]}: ({x}, {y})")
+                    if len(poly_pts) == 4:
+                        print(">> Da du 4 diem P1..P4! Nhan ENTER de nhap W, L va hoan tat vung toc do.")
             return
         if ev == cv2.EVENT_LBUTTONDBLCLK:
             kind, payload = st.on_dblclk(x, y, now)
@@ -537,7 +567,56 @@ def main():
         elif kind is None:
             kind = "banned" if violation in ("3", "6", "7") else "directional"
         try:
-            if violation == "6":
+            if violation == "5":
+                if len(poly_pts) != 4:
+                    print(f"Loi 5 (speeding) yeu cau dung 4 diem (P1..P4). Dang co {len(poly_pts)} diem. (Esc de huy)")
+                    return False
+                P1, P2, P3, P4 = poly_pts[0], poly_pts[1], poly_pts[2], poly_pts[3]
+                print("\n=== CAU HINH VUNG DO TOC DO 4 DIEM ===")
+                print(f"  P1({P1[0]},{P1[1]}) - P2({P2[0]},{P2[1]}): Chieu rong dau vao")
+                print(f"  P3({P3[0]},{P3[1]}) - P4({P4[0]},{P4[1]}): Chieu rong dau ra")
+                print("  Huong xe: Tu trung diem (P1,P2) -> trung diem (P3,P4)")
+                w_in = input("Nhap chieu rong duong W (met, mac dinh 3.5): ").strip() or "3.5"
+                l_in = input("Nhap chieu dai doan L (met, mac dinh 20.0): ").strip() or "20.0"
+                sp_in = input("Nhap toc do gioi han (km/h, mac dinh 50): ").strip() or "50"
+                width_m = float(w_in)
+                length_m = float(l_in)
+                limit_kmh = float(sp_in)
+
+                world_dst = [
+                    [0.0, 0.0],
+                    [width_m, 0.0],
+                    [width_m, length_m],
+                    [0.0, length_m],
+                ]
+                H_mat, inliers, reproj_err = build_H(poly_pts, world_dst)
+                print(f"Homography OK: {inliers}/4 inliers, reproj error {reproj_err:.2f}m")
+
+                m12 = [(P1[0] + P2[0]) / 2.0, (P1[1] + P2[1]) / 2.0]
+                m34 = [(P3[0] + P4[0]) / 2.0, (P3[1] + P4[1]) / 2.0]
+
+                p = add_polygon(cfg, poly_pts, kind="directional")
+                p["homography"] = {
+                    "src": [[int(x), int(y)] for x, y in poly_pts],
+                    "dst": world_dst,
+                    "measured_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                p["road_dir"] = [0.0, 1.0]
+                p["road_dir_points"] = [
+                    [round(m12[0], 1), round(m12[1], 1)],
+                    [round(m34[0], 1), round(m34[1], 1)],
+                ]
+                p.setdefault("rules", {})["speeding"] = {
+                    "enable": True,
+                    "limit_kmh": limit_kmh,
+                }
+                print(f"Da tao vung toc do {p['id']}: {width_m}m x {length_m}m, limit={limit_kmh}km/h, huong xe tu dong.")
+                poly_pts.clear()
+                dirty = True
+                sel_poly = p
+                tool_mode = "line"
+                return p["id"]
+            elif violation == "6":
                 dw = input("dwell_s thoi gian do xe de bao loi (mac dinh 10s): ").strip() or "10"
                 p = add_polygon(cfg, poly_pts, kind="banned",
                                 banned_classes=[],
@@ -865,7 +944,8 @@ def main():
                        roi_drag=roi_drag, sel_signal=sel_signal,
                        calib_pts=calib["pts"] if calib else None,
                        calib_dir=(calib["pts"][:2]
-                                  if calib and calib["stage"] == "dir" else None))
+                                  if calib and calib["stage"] == "dir" else None),
+                       violation=violation)
         # Thanh dieu khien HUD phong cach Dashboard hien dai
         hud_h = 68
         w = vis.shape[1]
@@ -901,10 +981,17 @@ def main():
         # Polygon rules active list
         y0 = hud_h + 24
         for p in get_polygons(cfg):
-            on = [r for r in ("wrong_way", "no_uturn", "no_entry_road", "no_parking", "no_gathering", "red_light_running", "stop_line")
-                  if (p.get("rules") or {}).get(r, {}).get("enable", True)]
+            rules_dict = p.get("rules") or {}
+            active_rules = []
+            for r in ("wrong_way", "no_uturn", "no_entry_road", "no_parking", "no_gathering", "red_light_running", "stop_line", "speeding"):
+                rc = rules_dict.get(r, {})
+                if rc.get("enable", True):
+                    if r == "speeding":
+                        active_rules.append(f"speed({rc.get('limit_kmh', 50)}km/h)")
+                    else:
+                        active_rules.append(r)
             p_col, _ = get_polygon_color_and_label(p)
-            poly_info = f"{p['id']}: {'+'.join(on) if on else 'tat het'}"
+            poly_info = f"{p['id']}: {'+'.join(active_rules) if active_rules else 'tat het'}"
             draw_pill_badge(vis, poly_info, (14, y0), border_col=p_col, font_scale=0.42, pad_x=4, pad_y=2)
             y0 += 22
             if y0 > frame.shape[0] - 20:
@@ -937,6 +1024,12 @@ def main():
                 print(f"Chon loi: {m['violation']} "
                       f"(chi duoc: {', '.join(m['tools'])})")
                 print("Cong cu: " + "  ".join(tools_help(kchr)))
+                if kchr == "5":
+                    print("\n>>> CHE DO SPEEDING 4 DIEM TRUC TIEP <<<")
+                    print("  Nhan 'p' de bat dau cham 4 diem P1->P2->P3->P4 tren mat duong:")
+                    print("    * P1 (Trai) & P2 (Phai): Chieu rong dau vao (W)")
+                    print("    * P3 (Phai) & P4 (Trai): Chieu rong dau ra (W)")
+                    print("    * Huong xe va Homography se tu dong duoc tinh tu trung diem (P1,P2) -> (P3,P4)!")
             continue
         if kchr == "0":
             if _busy():
@@ -972,7 +1065,11 @@ def main():
                 elif kchr == "i":
                     _start_polygon_draw("intersection")
                 elif kchr == "c":
-                    msg = _start_calib_mode()
+                    if violation == "5" and sel_poly is None:
+                        msg = "Speeding tich hop tu dong: nhan 'p' ve 4 diem P1->P2->P3->P4 roi Enter!"
+                        print(msg)
+                    else:
+                        msg = _start_calib_mode()
                 elif kchr == "k":
                     msg = _link_signal()
                     print(msg)

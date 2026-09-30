@@ -176,7 +176,6 @@ export function CalibratePage() {
   // Speeding (Ho tro ve polygon tuy y + hieu chuan 4 diem H + road_dir)
   const [speedZones, setSpeedZones] = useState<SpeedZone[]>([]);
   const [editingSpeedZoneId, setEditingSpeedZoneId] = useState<string | null>(null);
-  const [speedSubMode, setSpeedSubMode] = useState<"poly" | "calib" | "arrow">("poly");
   const [speedArrow, setSpeedArrow] = useState<number[][]>([]);
   const [rectPts, setRectPts] = useState<number[][]>([]);
   const [widthM, setWidthM] = useState(3.5);
@@ -358,13 +357,7 @@ export function CalibratePage() {
 
   function addPoint(p: number[]) {
     if (activeRule === "speeding") {
-      if (speedSubMode === "poly") {
-        setDraftPoly((v) => [...v, p]);
-      } else if (speedSubMode === "calib") {
-        setRectPts((v) => (v.length >= 4 ? v : [...v, p]));
-      } else if (speedSubMode === "arrow") {
-        setSpeedArrow((v) => (v.length >= 2 ? [p] : [...v, p]));
-      }
+      setRectPts((v) => (v.length >= 4 ? v : [...v, p]));
     } else if (activeRule === "red_light") {
       if (drawSubMode === "stop") {
         setStopPts((v) => (v.length >= 2 ? v : [...v, p]));
@@ -389,9 +382,7 @@ export function CalibratePage() {
 
   function undoPoint() {
     if (activeRule === "speeding") {
-      if (speedSubMode === "poly") setDraftPoly((v) => v.slice(0, -1));
-      else if (speedSubMode === "calib") setRectPts((v) => v.slice(0, -1));
-      else if (speedSubMode === "arrow") setSpeedArrow((v) => v.slice(0, -1));
+      setRectPts((v) => v.slice(0, -1));
     } else if (activeRule === "red_light") {
       if (drawSubMode === "stop") setStopPts((v) => v.slice(0, -1));
       else setLightPts((v) => v.slice(0, -1));
@@ -511,13 +502,8 @@ export function CalibratePage() {
   }
 
   async function saveSpeedingZone() {
-    const finalPoly = draftPoly.length >= 3 ? draftPoly : rectPts;
     if (rectPts.length !== 4) {
-      setError("Vui lòng chấm đủ 4 điểm hiệu chuẩn mặt phẳng đường H (Bước 2).");
-      return;
-    }
-    if (finalPoly.length < 3) {
-      setError("Vui lòng vẽ đa giác vùng làn đường (Bước 1) hoặc chấm 4 góc hiệu chuẩn.");
+      setError("Vui lòng chấm đủ 4 điểm P1..P4 cho vùng đo tốc độ.");
       return;
     }
     setError("");
@@ -538,21 +524,19 @@ export function CalibratePage() {
       [0.0, lengthM],
     ];
 
-    let rdir: number[] = [0.0, 1.0];
-    let rdirPts: number[][] | undefined = undefined;
-    if (speedArrow.length === 2) {
-      const dx = speedArrow[1][0] - speedArrow[0][0];
-      const dy = speedArrow[1][1] - speedArrow[0][1];
-      const mag = Math.hypot(dx, dy) || 1;
-      rdir = [Math.round((dx / mag) * 1000) / 1000, Math.round((dy / mag) * 1000) / 1000];
-      rdirPts = speedArrow;
-    }
+    // M12: Trung điểm (P1, P2) - Rộng vào, M34: Trung điểm (P3, P4) - Rộng ra
+    const m12 = [(rectPts[0][0] + rectPts[1][0]) / 2.0, (rectPts[0][1] + rectPts[1][1]) / 2.0];
+    const m34 = [(rectPts[2][0] + rectPts[3][0]) / 2.0, (rectPts[2][1] + rectPts[3][1]) / 2.0];
+    const rdirPts = [
+      [Math.round(m12[0] * 10) / 10, Math.round(m12[1] * 10) / 10],
+      [Math.round(m34[0] * 10) / 10, Math.round(m34[1] * 10) / 10],
+    ];
 
     const polyPayload: any = {
       id: targetId,
       kind: "directional",
-      polygon: finalPoly,
-      road_dir: rdir,
+      polygon: rectPts,
+      road_dir: [0.0, 1.0],
       road_dir_points: rdirPts,
       rules: {
         speeding: {
@@ -573,9 +557,9 @@ export function CalibratePage() {
         ...prev.filter((z) => z.id !== targetId),
         {
           id: targetId!,
-          polygon: savedPoly.polygon || finalPoly,
+          polygon: savedPoly.polygon || rectPts,
           homography_src: savedPoly.homography?.src || rectPts,
-          road_dir: savedPoly.road_dir || rdir,
+          road_dir: savedPoly.road_dir || [0.0, 1.0],
           road_dir_points: savedPoly.road_dir_points || rdirPts,
           width_m: widthM,
           length_m: lengthM,
@@ -586,7 +570,7 @@ export function CalibratePage() {
       setDraftPoly([]);
       setSpeedArrow([]);
       setEditingSpeedZoneId(null);
-      setSyncStatus(`✓ Đã ghi vùng tốc độ ${targetId} (${(savedPoly.polygon || finalPoly).length} đỉnh, ${widthM}m x ${lengthM}m, ${speedLimit}km/h) vào active.yaml!`);
+      setSyncStatus(`✓ Đã lưu vùng tốc độ 4 điểm ${targetId} (${widthM}m x ${lengthM}m, giới hạn ${speedLimit} km/h) vào active.yaml!`);
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
     } catch (err) {
@@ -1659,177 +1643,66 @@ export function CalibratePage() {
                         </button>
                       </div>
                     ) : (
-                      <div style={{ fontSize: "11px", color: "var(--muted)", lineHeight: 1.4 }}>
-                        Hiệu chuẩn đo tốc độ theo chuẩn camera: <b>Vẽ làn đường + 4 góc chuẩn Homography (phím c) + Hướng xe chạy (road_dir)</b>.
+                      <div style={{
+                        fontSize: "11.5px",
+                        color: "var(--ink-secondary)",
+                        background: "rgba(217, 70, 239, 0.08)",
+                        padding: "8px 10px",
+                        borderRadius: "var(--radius-sm)",
+                        borderLeft: "3px solid #d946ef",
+                        lineHeight: 1.5,
+                      }}>
+                        <b>Quy ước vùng đo 4 điểm trực tiếp:</b><br />
+                        • Click <b>P1 (Trái) & P2 (Phải)</b>: Chiều rộng đầu vào đường (W)<br />
+                        • Click <b>P3 (Phải) & P4 (Trái)</b>: Chiều rộng đầu ra đường (W)<br />
+                        • Cạnh dọc P1-P4 & P2-P3: Chiều dài vùng đo (L)<br />
+                        • <i>Hướng xe sẽ tự động lấy từ trung điểm (P1, P2) → (P3, P4)</i>
                       </div>
                     )}
 
-                    {/* 3 Tab chế độ vẽ / hiệu chuẩn */}
+                    {/* Tiến độ chấm 4 điểm */}
                     <div style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr",
-                      gap: "4px",
                       background: "var(--surface-raised)",
-                      padding: "3px",
+                      padding: "8px 10px",
                       borderRadius: "var(--radius-sm)",
+                      fontSize: "11px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
                     }}>
-                      <button
-                        type="button"
-                        className={`button ${speedSubMode === "poly" ? "button-primary" : "button-secondary"}`}
-                        style={{
-                          fontSize: "10.5px",
-                          padding: "6px 4px",
-                          background: speedSubMode === "poly" ? "#d946ef" : "transparent",
-                          color: speedSubMode === "poly" ? "#fff" : "var(--ink-secondary)",
-                          fontWeight: speedSubMode === "poly" ? 700 : 500,
-                        }}
-                        onClick={() => setSpeedSubMode("poly")}
-                      >
-                        1. Đa giác ({draftPoly.length})
-                      </button>
-                      <button
-                        type="button"
-                        className={`button ${speedSubMode === "calib" ? "button-primary" : "button-secondary"}`}
-                        style={{
-                          fontSize: "10.5px",
-                          padding: "6px 4px",
-                          background: speedSubMode === "calib" ? "var(--emerald)" : "transparent",
-                          color: speedSubMode === "calib" ? "#fff" : "var(--ink-secondary)",
-                          fontWeight: speedSubMode === "calib" ? 700 : 500,
-                        }}
-                        onClick={() => setSpeedSubMode("calib")}
-                      >
-                        2. 4 góc H ({rectPts.length}/4)
-                      </button>
-                      <button
-                        type="button"
-                        className={`button ${speedSubMode === "arrow" ? "button-primary" : "button-secondary"}`}
-                        style={{
-                          fontSize: "10.5px",
-                          padding: "6px 4px",
-                          background: speedSubMode === "arrow" ? "#eab308" : "transparent",
-                          color: speedSubMode === "arrow" ? "#000" : "var(--ink-secondary)",
-                          fontWeight: speedSubMode === "arrow" ? 700 : 500,
-                        }}
-                        onClick={() => setSpeedSubMode("arrow")}
-                      >
-                        3. Hướng ({speedArrow.length}/2)
-                      </button>
+                      <span>Đã chấm: <b style={{ color: rectPts.length === 4 ? "var(--emerald)" : "#d946ef" }}>{rectPts.length}/4 điểm</b></span>
+                      {rectPts.length > 0 && (
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          style={{ fontSize: "10px", padding: "2px 8px" }}
+                          onClick={() => { setRectPts([]); setPreview(null); }}
+                        >
+                          Xóa chấm lại
+                        </button>
+                      )}
                     </div>
 
-                    {/* Hướng dẫn và thao tác cho từng Bước */}
-                    {speedSubMode === "poly" && (
-                      <div style={{ fontSize: "11px", color: "var(--ink-secondary)", background: "rgba(217, 70, 239, 0.08)", padding: "8px", borderRadius: "var(--radius-sm)", borderLeft: "3px solid #d946ef", display: "flex", flexDirection: "column", gap: "6px" }}>
-                        <div>
-                          <b>Bước 1: Vẽ đa giác vùng làn đường</b><br />
-                          Click các điểm trên ảnh để vẽ đường viền bao quanh làn đường (thẳng hoặc cong tùy ý).
-                        </div>
-                        <div style={{ fontSize: "10.5px", color: "var(--muted)" }}>
-                          {draftPoly.length === 0 ? "Chưa chấm điểm nào. Click chuột lên khung hình để tạo đỉnh." : `Đã chấm ${draftPoly.length} đỉnh đa giác.`}
-                        </div>
-                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "2px" }}>
-                          {draftPoly.length >= 3 && (
-                            <button
-                              type="button"
-                              className="button button-primary"
-                              style={{ fontSize: "11px", padding: "4px 8px", background: "var(--emerald)", flex: "1 1 auto" }}
-                              onClick={() => setSpeedSubMode("calib")}
-                            >
-                              ✓ Chốt đa giác & Sang Bước 2 →
-                            </button>
-                          )}
-                          {draftPoly.length === 0 && (
-                            <button
-                              type="button"
-                              className="button button-secondary"
-                              style={{ fontSize: "10.5px", padding: "3px 8px" }}
-                              onClick={() => setSpeedSubMode("calib")}
-                            >
-                              Bỏ qua vẽ đa giác (Dùng 4 góc H) →
-                            </button>
-                          )}
-                          {draftPoly.length > 0 && (
-                            <button
-                              type="button"
-                              className="button button-secondary"
-                              style={{ fontSize: "10.5px", padding: "3px 8px" }}
-                              onClick={() => setDraftPoly([])}
-                            >
-                              Xóa vẽ lại đa giác
-                            </button>
-                          )}
-                        </div>
+                    {/* Trạng thái chi tiết 4 điểm */}
+                    <div style={{ fontSize: "10.5px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <div style={{ color: rectPts.length >= 1 ? "var(--emerald)" : "var(--muted)" }}>
+                        {rectPts.length >= 1 ? `✓ P1 (${rectPts[0][0]}, ${rectPts[0][1]}): Đầu vào - Trái` : "○ P1: Click mép trái đầu vào làn"}
                       </div>
-                    )}
-
-                    {speedSubMode === "calib" && (
-                      <div style={{ fontSize: "11px", color: "var(--ink-secondary)", background: "rgba(16, 185, 129, 0.08)", padding: "8px", borderRadius: "var(--radius-sm)", borderLeft: "3px solid var(--emerald)", display: "flex", flexDirection: "column", gap: "6px" }}>
-                        <div>
-                          <b>Bước 2: Hiệu chuẩn 4 điểm mặt đường (Homography - phím c)</b><br />
-                          Thứ tự chấm: <b>P1 (đáy trái) → P2 (đáy phải) → P3 (đỉnh phải) → P4 (đỉnh trái)</b>.
-                        </div>
-                        <div style={{ fontSize: "10.5px" }}>
-                          {rectPts.length === 0 && <span style={{ color: "var(--muted)" }}>Hãy click điểm <b>P1 (đáy trái)</b> trên mặt đường.</span>}
-                          {rectPts.length === 1 && <span style={{ color: "#38bdf8" }}>Đã có P1. Hãy click điểm <b>P2 (đáy phải)</b>.</span>}
-                          {rectPts.length === 2 && <span style={{ color: "#38bdf8" }}>Đã có P1, P2. Hãy click điểm <b>P3 (đỉnh phải)</b>.</span>}
-                          {rectPts.length === 3 && <span style={{ color: "#38bdf8" }}>Đã có P1..P3. Hãy click điểm <b>P4 (đỉnh trái)</b>.</span>}
-                          {rectPts.length === 4 && <span style={{ color: "var(--emerald)", fontWeight: 700 }}>✓ Đã hoàn tất 4 điểm hiệu chuẩn Homography!</span>}
-                        </div>
-                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "2px" }}>
-                          {rectPts.length === 4 && (
-                            <button
-                              type="button"
-                              className="button button-primary"
-                              style={{ fontSize: "11px", padding: "4px 8px", background: "#eab308", color: "#000", fontWeight: 700, flex: "1 1 auto" }}
-                              onClick={() => setSpeedSubMode("arrow")}
-                            >
-                              Sang Bước 3 (Chấm hướng A→B) →
-                            </button>
-                          )}
-                          {rectPts.length > 0 && (
-                            <button
-                              type="button"
-                              className="button button-secondary"
-                              style={{ fontSize: "10.5px", padding: "3px 8px" }}
-                              onClick={() => setRectPts([])}
-                            >
-                              Xóa 4 góc H chấm lại
-                            </button>
-                          )}
-                        </div>
+                      <div style={{ color: rectPts.length >= 2 ? "var(--emerald)" : "var(--muted)" }}>
+                        {rectPts.length >= 2 ? `✓ P2 (${rectPts[1][0]}, ${rectPts[1][1]}): Đầu vào - Phải (Rộng W)` : "○ P2: Click mép phải đầu vào làn"}
                       </div>
-                    )}
-
-                    {speedSubMode === "arrow" && (
-                      <div style={{ fontSize: "11px", color: "var(--ink-secondary)", background: "rgba(234, 179, 8, 0.08)", padding: "8px", borderRadius: "var(--radius-sm)", borderLeft: "3px solid #eab308", display: "flex", flexDirection: "column", gap: "6px" }}>
-                        <div>
-                          <b>Bước 3: Xác định hướng xe chạy (road_dir)</b><br />
-                          Click 2 điểm: <b>A (vị trí xe đến) → B (hướng xe đi)</b> dọc theo trục làn đường.
-                        </div>
-                        <div style={{ fontSize: "10.5px" }}>
-                          {speedArrow.length === 0 && <span style={{ color: "var(--muted)" }}>Click điểm <b>A</b> (đầu làn xe chạy vào).</span>}
-                          {speedArrow.length === 1 && <span style={{ color: "#facc15" }}>Đã có điểm A. Click tiếp điểm <b>B</b> (hướng xe đi ra).</span>}
-                          {speedArrow.length === 2 && <span style={{ color: "var(--emerald)", fontWeight: 700 }}>✓ Đã xác định hướng lưu thông A → B!</span>}
-                        </div>
-                        {speedArrow.length > 0 && (
-                          <div style={{ marginTop: "2px" }}>
-                            <button
-                              type="button"
-                              className="button button-secondary"
-                              style={{ fontSize: "10.5px", padding: "3px 8px" }}
-                              onClick={() => setSpeedArrow([])}
-                            >
-                              Xóa hướng chấm lại
-                            </button>
-                          </div>
-                        )}
+                      <div style={{ color: rectPts.length >= 3 ? "var(--emerald)" : "var(--muted)" }}>
+                        {rectPts.length >= 3 ? `✓ P3 (${rectPts[2][0]}, ${rectPts[2][1]}): Đầu ra - Phải (Dài L)` : "○ P3: Click mép phải đầu ra làn"}
                       </div>
-                    )}
+                      <div style={{ color: rectPts.length >= 4 ? "var(--emerald)" : "var(--muted)" }}>
+                        {rectPts.length >= 4 ? `✓ P4 (${rectPts[3][0]}, ${rectPts[3][1]}): Đầu ra - Trái (Hoàn tất tứ giác)` : "○ P4: Click mép trái đầu ra làn"}
+                      </div>
+                    </div>
 
                     {/* Kích thước thực tế */}
                     <div className="calib-grid-2">
                       <label>
-                        <span>Chiều rộng làn W (m)</span>
+                        <span>Chiều rộng đường W (m)</span>
                         <input
                           type="number"
                           step="0.1"
@@ -1838,10 +1711,10 @@ export function CalibratePage() {
                         />
                       </label>
                       <label>
-                        <span>Chiều dài đoạn L (m)</span>
+                        <span>Chiều dài vùng đo L (m)</span>
                         <input
                           type="number"
-                          step="0.1"
+                          step="0.5"
                           value={lengthM}
                           onChange={(e) => setLengthM(+e.target.value)}
                         />
@@ -1850,50 +1723,23 @@ export function CalibratePage() {
 
                     {/* Tốc độ giới hạn */}
                     <label>
-                      <span>Tốc độ giới hạn tối đa (km/h)</span>
+                      <span>Tốc độ giới hạn (km/h)</span>
                       <input
                         type="number"
+                        step="5"
+                        min="10"
+                        max="150"
                         value={speedLimit}
                         onChange={(e) => setSpeedLimit(+e.target.value)}
                       />
                     </label>
 
                     {preview && (
-                      <div className={`calib-preview ${preview.ok ? "ok" : "warn"}`} style={{ padding: "5px 8px", fontSize: "11px" }}>
+                      <div className={`calib-preview ${preview.ok ? "ok" : "warn"}`} style={{ padding: "6px 8px", fontSize: "11px" }}>
                         {preview.ok ? "✓ " : "⚠️ "}
                         {preview.message}
                       </div>
                     )}
-
-                    {/* Bảng tóm tắt trạng thái các bước */}
-                    <div style={{
-                      background: "var(--surface-sunken)",
-                      padding: "6px 8px",
-                      borderRadius: "var(--radius-sm)",
-                      fontSize: "11px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "3px",
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ color: "var(--muted)" }}>1. Đa giác làn xe:</span>
-                        <span style={{ color: draftPoly.length >= 3 ? "var(--emerald)" : "var(--ink-secondary)", fontWeight: 600 }}>
-                          {draftPoly.length >= 3 ? `✓ ${draftPoly.length} đỉnh` : (rectPts.length === 4 ? "✓ Dùng 4 góc H" : "Tùy chọn")}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ color: "var(--muted)" }}>2. Mặt phẳng H:</span>
-                        <span style={{ color: rectPts.length === 4 ? "var(--emerald)" : "#f43f5e", fontWeight: 600 }}>
-                          {rectPts.length === 4 ? `✓ Đủ 4 góc (${widthM}m x ${lengthM}m)` : `${rectPts.length}/4 góc (Cần đủ 4)`}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ color: "var(--muted)" }}>3. Hướng di chuyển:</span>
-                        <span style={{ color: speedArrow.length === 2 ? "var(--emerald)" : "var(--ink-secondary)", fontWeight: 600 }}>
-                          {speedArrow.length === 2 ? "✓ Vector A→B" : "Mặc định [0, 1]"}
-                        </span>
-                      </div>
-                    </div>
 
                     {/* Nút hành động Lưu / Cập nhật */}
                     <div style={{ marginTop: "4px" }}>
@@ -1904,20 +1750,21 @@ export function CalibratePage() {
                         onClick={saveSpeedingZone}
                         style={{
                           width: "100%",
-                          background: rectPts.length === 4 ? "var(--emerald)" : "var(--surface-raised)",
-                          padding: "8px 12px",
+                          padding: "10px",
                           fontSize: "12px",
-                          fontWeight: 600,
+                          fontWeight: 700,
+                          background: rectPts.length === 4 ? "#d946ef" : "var(--surface-raised)",
+                          borderColor: "#d946ef",
+                          color: "#fff",
                           justifyContent: "center",
                           display: "flex",
                           alignItems: "center",
                           gap: "6px",
                         }}
                       >
-                        <Check size={14} /> {editingSpeedZoneId ? `Cập nhật vùng ${editingSpeedZoneId}` : `+ Ghi thêm vùng tốc độ (SPEED_${(() => {
-                          const used = new Set(speedZones.map(z => z.id));
-                          let i = 1; while (used.has(`SPEED_${i}`)) i++; return i;
-                        })()})`}
+                        <Check size={14} /> {editingSpeedZoneId
+                          ? `✓ Cập nhật vùng tốc độ ${editingSpeedZoneId}`
+                          : `✓ Lưu vùng đo tốc độ (${speedLimit} km/h)`}
                       </button>
                     </div>
 
