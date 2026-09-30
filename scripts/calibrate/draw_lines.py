@@ -271,9 +271,9 @@ def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=Non
         mx, my = (p1[0] + p2[0]) // 2, (p1[1] + p2[1]) // 2
 
         if is_divider:
-            tag = f"{ln[id]} [divider]"
+            tag = f"{ln['id']} [divider]"
         elif is_stop:
-            tag = f"{ln[id]} [stop]"
+            tag = f"{ln['id']} [stop]"
             if ln.get("signal_id"):
                 tag += f" -> {ln.get('signal_id', '')}"
         else:
@@ -329,7 +329,7 @@ def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=Non
     # 9. Pairs (Cap line U-Turn)
     y = 85
     for i, p in enumerate(pairs):
-        text = f"pair{i}: {p[first]} -> {p[second]}" + (f" [med={p[medial]}]" if p.get("medial") else "")
+        text = f"pair{i}: {p['first']} -> {p['second']}" + (f" [med={p.get('medial', '')}]" if p.get("medial") else "")
         draw_pill_badge(vis, text, (vis.shape[1] - 250, y), border_col=PALETTE["no_uturn"], font_scale=0.42)
         y += 24
 
@@ -904,7 +904,7 @@ def main():
             on = [r for r in ("wrong_way", "no_uturn", "no_entry_road", "no_parking", "no_gathering", "red_light_running", "stop_line")
                   if (p.get("rules") or {}).get(r, {}).get("enable", True)]
             p_col, _ = get_polygon_color_and_label(p)
-            poly_info = f"{p[id]}: {'+'.join(on) if on else 'tat het'}"
+            poly_info = f"{p['id']}: {'+'.join(on) if on else 'tat het'}"
             draw_pill_badge(vis, poly_info, (14, y0), border_col=p_col, font_scale=0.42, pad_x=4, pad_y=2)
             y0 += 22
             if y0 > frame.shape[0] - 20:
