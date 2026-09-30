@@ -22,6 +22,7 @@ test/
 
 # ================= Docs / Markdown =================
 docs/
+README.md
 
 # ================= Local runtime configs =================
 # Bản active của máy local (copy từ camera_config.yaml), không commit
