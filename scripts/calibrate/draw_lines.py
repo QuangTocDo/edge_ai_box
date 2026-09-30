@@ -149,30 +149,31 @@ def draw_point_marker(vis, pt, col, r=5, label=None, label_col=None):
 
 def get_polygon_color_and_label(poly):
     """Xac dinh mau sac va nhan hien thi chuan theo tung loai rule giong Dashboard."""
+    pid = poly.get("id", "ZONE")
     rules = poly.get("rules", {})
     if "speeding" in rules or poly.get("homography"):
         limit = 50
         sp_cfg = rules.get("speeding")
         if isinstance(sp_cfg, dict):
             limit = sp_cfg.get("limit_kmh", 50)
-        return PALETTE["speeding"], f"{poly.get(id, SPEED)}: {limit}km/h"
+        return PALETTE["speeding"], f"{pid}: {limit}km/h"
     if "no_uturn" in rules:
-        return PALETTE["no_uturn"], f"{poly.get(id, ZONE)} [No U-Turn]"
+        return PALETTE["no_uturn"], f"{pid} [No U-Turn]"
     if "no_entry_road" in rules:
-        return PALETTE["no_entry_road"], f"{poly.get(id, ZONE)} [No Entry]"
+        return PALETTE["no_entry_road"], f"{pid} [No Entry]"
     if "no_parking" in rules:
-        return PALETTE["no_parking"], f"{poly.get(id, ZONE)} [No Parking]"
+        return PALETTE["no_parking"], f"{pid} [No Parking]"
     if "no_gathering" in rules:
-        return PALETTE["no_gathering"], f"{poly.get(id, ZONE)} [No Gathering]"
+        return PALETTE["no_gathering"], f"{pid} [No Gathering]"
     if "red_light_running" in rules:
-        return PALETTE["red_light"], f"{poly.get(id, ZONE)} [Red Light]"
+        return PALETTE["red_light"], f"{pid} [Red Light]"
 
     kind = poly.get("kind", "")
     if kind == "banned":
-        return PALETTE["no_entry_road"], f"{poly.get(id, ZONE)} [Banned]"
+        return PALETTE["no_entry_road"], f"{pid} [Banned]"
     if kind == "intersection":
-        return PALETTE["intersection"], f"{poly.get(id, ZONE)} [Intersection]"
-    return PALETTE["wrong_way"], f"{poly.get(id, ZONE)} [{kind or Poly}]"
+        return PALETTE["intersection"], f"{pid} [Intersection]"
+    return PALETTE["wrong_way"], f"{pid} [{kind or 'Poly'}]"
 
 
 def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=None, sel_signal=None,
@@ -236,11 +237,11 @@ def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=Non
             if r_pts and len(r_pts) == 2:
                 cv2.arrowedLine(vis, (int(r_pts[0][0]), int(r_pts[0][1])),
                                 (int(r_pts[1][0]), int(r_pts[1][1])),
-                                PALETTE["arrow"], 3, tipLength=0.25, lineType=cv2.LINE_AA)
+                                PALETTE["arrow"], 3, tipLength=0.25)
             elif p.get("road_dir") and len(p["road_dir"]) == 2:
                 rdir = p["road_dir"]
                 p_end = (int(mx + rdir[0] * 50), int(my + rdir[1] * 50))
-                cv2.arrowedLine(vis, (mx, my), p_end, PALETTE["arrow"], 3, tipLength=0.25, lineType=cv2.LINE_AA)
+                cv2.arrowedLine(vis, (mx, my), p_end, PALETTE["arrow"], 3, tipLength=0.25)
 
     # 4. Lines (Vach dung, Vach nguoc chieu, Dai phan cach)
     for ln in iter_all_lines(cfg):
@@ -274,14 +275,14 @@ def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=Non
         elif is_stop:
             tag = f"{ln[id]} [stop]"
             if ln.get("signal_id"):
-                tag += f" -> {ln[signal_id]}"
+                tag += f" -> {ln.get('signal_id', '')}"
         else:
             ax, ay = allowed_vec(ln["p1"], ln["p2"], ln.get("allowed_sign", 1))
             arrow_end = (int(mx + ax * ARROW_LEN), int(my + ay * ARROW_LEN))
-            cv2.arrowedLine(vis, (mx, my), arrow_end, PALETTE["arrow"], 2, tipLength=0.25, lineType=cv2.LINE_AA)
-            tag = f"{ln[id]} {ln.get(allowed_sign, 1):+d}"
+            cv2.arrowedLine(vis, (mx, my), arrow_end, PALETTE["arrow"], 2, tipLength=0.25)
+            tag = f"{ln['id']} {ln.get('allowed_sign', 1):+d}"
             if ln.get("signal_id"):
-                tag += f" -> {ln[signal_id]}"
+                tag += f" -> {ln.get('signal_id', '')}"
 
         draw_pill_badge(vis, tag, (mx - 15, my - 8), border_col=col, font_scale=0.45)
 
@@ -321,7 +322,7 @@ def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=Non
     if calib_dir and len(calib_dir) == 2:
         (ax, ay), (bx, by) = calib_dir
         cv2.arrowedLine(vis, (int(ax), int(ay)), (int(bx), int(by)),
-                        PALETTE["arrow"], 3, tipLength=0.25, lineType=cv2.LINE_AA)
+                        PALETTE["arrow"], 3, tipLength=0.25)
         draw_point_marker(vis, (ax, ay), PALETTE["arrow"], r=5, label="A (Dau)")
         draw_point_marker(vis, (bx, by), PALETTE["arrow"], r=5, label="B (Huong)")
 
