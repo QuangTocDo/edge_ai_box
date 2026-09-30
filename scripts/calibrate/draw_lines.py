@@ -962,7 +962,7 @@ def main():
             m = get_mode(violation)
             assert m is not None, violation
             mode_color = PALETTE.get(m.get("violation", ""), (16, 185, 129))
-            draw_pill_badge(vis, f"LOI: {m[label]}", (14, 24), border_col=mode_color, bg_col=(30, 41, 59), font_scale=0.48)
+            draw_pill_badge(vis, f"LOI: {m.get('label', '')}", (14, 24), border_col=mode_color, bg_col=(30, 41, 59), font_scale=0.48)
             tools_txt = f"Cong cu: {'  '.join(tools_help(violation))} | 0=doi loi | S=luu | Q=thoat"
             cv2.putText(vis, tools_txt, (260, 24), font, 0.46, (226, 232, 240), 1, lineType=cv2.LINE_AA)
 
