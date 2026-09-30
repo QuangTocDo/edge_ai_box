@@ -26,6 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.calibration.draw_state import DrawState, mode_label, resolve_enter_action  # noqa: E402
@@ -50,84 +51,287 @@ def all_pairs(cfg):
 
 ARROW_LEN = 60
 
+# Bang mau chuan BGR dong bo voi Dashboard Tailwind/CSS
+PALETTE = {
+    "speeding": (239, 70, 217),        # #d946ef Fuchsia
+    "wrong_way": (94, 197, 34),        # #22c55e Green
+    "no_uturn": (8, 179, 234),         # #eab308 Amber
+    "no_entry_road": (22, 115, 249),    # #f97316 Orange
+    "red_light": (68, 68, 239),        # #ef4444 Red
+    "stop_line": (11, 158, 245),       # #f59e0b Amber-500
+    "no_parking": (212, 182, 6),       # #06b6d4 Cyan
+    "no_gathering": (247, 85, 168),    # #a855f7 Purple
+    "intersection": (246, 130, 59),    # #3b82f6 Sky/Blue
+    "divider": (246, 130, 59),         # #3b82f6 Sky/Blue
+    "homography": (129, 185, 16),      # #10b981 Emerald
+    "arrow": (21, 204, 250),           # #facc15 Yellow neon
+    "selected": (50, 50, 255),         # Bright Coral / Red
+    "dark_bg": (15, 23, 42),           # #0f172a Slate-900
+    "white": (255, 255, 255),
+    "gray": (148, 163, 184),           # Slate-400
+}
+
+
+def draw_pill_badge(vis, text, pos, border_col, bg_col=(15, 23, 42), text_col=(255, 255, 255),
+                    font_scale=0.45, thickness=1, pad_x=6, pad_y=4):
+    """Ve nhan dark pill voi vien mau sac net giong Dashboard."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (tw, th), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+    x, y = int(pos[0]), int(pos[1])
+    x1 = x - pad_x
+    y1 = y - th - pad_y
+    x2 = x + tw + pad_x
+    y2 = y + pad_y
+
+    h, w = vis.shape[:2]
+    if x1 < 2:
+        diff = 2 - x1; x1 += diff; x2 += diff; x += diff
+    if x2 > w - 2:
+        diff = x2 - (w - 2); x1 -= diff; x2 -= diff; x -= diff
+    if y1 < 2:
+        diff = 2 - y1; y1 += diff; y2 += diff; y += diff
+    if y2 > h - 2:
+        diff = y2 - (h - 2); y1 -= diff; y2 -= diff; y += diff
+
+    sub = vis[y1:y2, x1:x2]
+    if sub.shape[0] > 0 and sub.shape[1] > 0:
+        dark = np.full_like(sub, bg_col)
+        cv2.addWeighted(dark, 0.88, sub, 0.12, 0, sub)
+    cv2.rectangle(vis, (x1, y1), (x2, y2), border_col, 1, lineType=cv2.LINE_AA)
+    cv2.putText(vis, text, (x, y), font, font_scale, text_col, thickness, lineType=cv2.LINE_AA)
+    return (x1, y1, x2, y2)
+
+
+def draw_filled_poly(vis, pts, col, fill_alpha=0.18, border_thick=2, is_selected=False):
+    """Ve da giac voi lop mau phu ban trong suot giong Dashboard SVG fill."""
+    if len(pts) < 3:
+        return
+    pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+    overlay = vis.copy()
+    cv2.fillPoly(overlay, [pts_arr], col)
+    cv2.addWeighted(overlay, fill_alpha, vis, 1.0 - fill_alpha, 0, vis)
+    cv2.polylines(vis, [pts_arr], isClosed=True, color=col, thickness=border_thick, lineType=cv2.LINE_AA)
+    if is_selected:
+        cv2.polylines(vis, [pts_arr], isClosed=True, color=(255, 255, 255), thickness=1, lineType=cv2.LINE_AA)
+
+
+def draw_dashed_polyline(vis, pts, col, thickness=2, dash_len=8, gap_len=6, closed=True):
+    """Ve duong net dut (dashed line) dung cho khung 4 diem Homography."""
+    n = len(pts)
+    if n < 2:
+        return
+    segments = [(pts[i], pts[i + 1]) for i in range(n - 1)]
+    if closed and n > 2:
+        segments.append((pts[-1], pts[0]))
+    for p1, p2 in segments:
+        dist = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+        if dist < 1e-3:
+            continue
+        dx = (p2[0] - p1[0]) / dist
+        dy = (p2[1] - p1[1]) / dist
+        curr = 0.0
+        while curr < dist:
+            end = min(curr + dash_len, dist)
+            pa = (int(p1[0] + dx * curr), int(p1[1] + dy * curr))
+            pb = (int(p1[0] + dx * end), int(p1[1] + dy * end))
+            cv2.line(vis, pa, pb, col, thickness, lineType=cv2.LINE_AA)
+            curr += dash_len + gap_len
+
+
+def draw_point_marker(vis, pt, col, r=5, label=None, label_col=None):
+    """Ve diem dinh voi vong tron vien trang noi bat."""
+    x, y = int(pt[0]), int(pt[1])
+    cv2.circle(vis, (x, y), r + 2, (255, 255, 255), 1, lineType=cv2.LINE_AA)
+    cv2.circle(vis, (x, y), r, col, -1, lineType=cv2.LINE_AA)
+    if label:
+        draw_pill_badge(vis, label, (x + 8, y - 4), border_col=label_col or col, font_scale=0.40, pad_x=4, pad_y=2)
+
+
+def get_polygon_color_and_label(poly):
+    """Xac dinh mau sac va nhan hien thi chuan theo tung loai rule giong Dashboard."""
+    rules = poly.get("rules", {})
+    if "speeding" in rules or poly.get("homography"):
+        limit = 50
+        sp_cfg = rules.get("speeding")
+        if isinstance(sp_cfg, dict):
+            limit = sp_cfg.get("limit_kmh", 50)
+        return PALETTE["speeding"], f"{poly.get(id, SPEED)}: {limit}km/h"
+    if "no_uturn" in rules:
+        return PALETTE["no_uturn"], f"{poly.get(id, ZONE)} [No U-Turn]"
+    if "no_entry_road" in rules:
+        return PALETTE["no_entry_road"], f"{poly.get(id, ZONE)} [No Entry]"
+    if "no_parking" in rules:
+        return PALETTE["no_parking"], f"{poly.get(id, ZONE)} [No Parking]"
+    if "no_gathering" in rules:
+        return PALETTE["no_gathering"], f"{poly.get(id, ZONE)} [No Gathering]"
+    if "red_light_running" in rules:
+        return PALETTE["red_light"], f"{poly.get(id, ZONE)} [Red Light]"
+
+    kind = poly.get("kind", "")
+    if kind == "banned":
+        return PALETTE["no_entry_road"], f"{poly.get(id, ZONE)} [Banned]"
+    if kind == "intersection":
+        return PALETTE["intersection"], f"{poly.get(id, ZONE)} [Intersection]"
+    return PALETTE["wrong_way"], f"{poly.get(id, ZONE)} [{kind or Poly}]"
+
 
 def draw_all(vis, cfg, pairs, selected, clicks, poly_pts, sel_poly, roi_drag=None, sel_signal=None,
              calib_pts=None, calib_dir=None):
-    # Ve hop den giao thong (signals)
+    # 1. Signals (Hop den giao thong)
     for s in cfg.get("signals", []):
         roi = s.get("roi")
         if roi and len(roi) == 4:
             x1, y1, x2, y2 = [int(v) for v in roi]
             sel = sel_signal is not None and s.get("id") == sel_signal.get("id")
-            col = (0, 0, 255) if sel else (0, 255, 255)
-            cv2.rectangle(vis, (x1, y1), (x2, y2), col, 3 if sel else 2)
-            cv2.putText(vis, f"SIGNAL {s.get('id', '')}", (x1, max(15, y1 - 6)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 2)
-    # Ve khung ROI dang keo chuot
+            col = PALETTE["selected"] if sel else PALETTE["red_light"]
+
+            sub = vis[min(y1, y2):max(y1, y2), min(x1, x2):max(x1, x2)]
+            if sub.shape[0] > 0 and sub.shape[1] > 0:
+                fill_color = np.full_like(sub, col)
+                cv2.addWeighted(fill_color, 0.18, sub, 0.82, 0, sub)
+
+            cv2.rectangle(vis, (x1, y1), (x2, y2), col, 2, lineType=cv2.LINE_AA)
+            draw_pill_badge(vis, f"SIGNAL {s.get(id, )}", (min(x1, x2) + 4, min(y1, y2) - 6), border_col=col, font_scale=0.45)
+
+    # 2. Khung ROI dang keo chuot
     if roi_drag and roi_drag.get("p0") is not None:
         p0 = roi_drag["p0"]
         p1 = roi_drag.get("p1") or p0
         xa, xb = sorted([p0[0], p1[0]])
         ya, yb = sorted([p0[1], p1[1]])
-        cv2.rectangle(vis, (xa, ya), (xb, yb), (0, 255, 255), 2)
+        sub = vis[ya:yb, xa:xb]
+        if sub.shape[0] > 0 and sub.shape[1] > 0:
+            fill_c = np.full_like(sub, PALETTE["red_light"])
+            cv2.addWeighted(fill_c, 0.22, sub, 0.78, 0, sub)
+        cv2.rectangle(vis, (xa, ya), (xb, yb), PALETTE["red_light"], 2, lineType=cv2.LINE_AA)
+        draw_pill_badge(vis, "SIGNAL ROI (keo chuot)", (xa + 4, ya - 6), border_col=PALETTE["red_light"])
 
+    # 3. Polygons da luu (Zones, Speeding, Banned, etc.)
     for p in get_polygons(cfg):
         pts = [(int(x), int(y)) for x, y in (p.get("polygon") or [])]
         if len(pts) >= 3:
-            sel = sel_poly is not None and p["id"] == sel_poly["id"]
+            sel = sel_poly is not None and p["id"] == sel_poly.get("id")
+            col, label = get_polygon_color_and_label(p)
             if sel:
-                col = (0, 0, 255)
-            elif p.get("kind") == "banned":
-                col = (0, 0, 255)
-            elif p.get("kind") == "intersection":
-                col = (255, 255, 0)
-            else:
-                col = (0, 255, 0)
-            for a, b in zip(pts, pts[1:] + pts[:1]):
-                cv2.line(vis, a, b, col, 3 if sel else 2)
-            cv2.putText(vis, f"{p['id']} [{p.get('kind')}]", pts[0],
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+                col = PALETTE["selected"]
+
+            # Fill transparent & outline
+            draw_filled_poly(vis, pts, col, fill_alpha=0.18, border_thick=3 if sel else 2, is_selected=sel)
+
+            # Midpoint for label
+            mx = sum(x for x, y in pts) // len(pts)
+            my = sum(y for x, y in pts) // len(pts)
+            draw_pill_badge(vis, label, (mx - 24, my), border_col=col, font_scale=0.48)
+
+            # Neu co homography (Speeding), ve 4 diem goc H bang net dut xanh emerald
+            hom = p.get("homography")
+            if hom and hom.get("src") and len(hom["src"]) == 4:
+                h_pts = [(int(x), int(y)) for x, y in hom["src"]]
+                draw_dashed_polyline(vis, h_pts, PALETTE["homography"], thickness=1, dash_len=6, gap_len=4, closed=True)
+                for i, hpt in enumerate(h_pts):
+                    draw_point_marker(vis, hpt, PALETTE["homography"], r=4, label=f"P{i+1}")
+
+            # Neu co huong road_dir, ve mui ten vang
+            r_pts = p.get("road_dir_points")
+            if r_pts and len(r_pts) == 2:
+                cv2.arrowedLine(vis, (int(r_pts[0][0]), int(r_pts[0][1])),
+                                (int(r_pts[1][0]), int(r_pts[1][1])),
+                                PALETTE["arrow"], 3, tipLength=0.25, lineType=cv2.LINE_AA)
+            elif p.get("road_dir") and len(p["road_dir"]) == 2:
+                rdir = p["road_dir"]
+                p_end = (int(mx + rdir[0] * 50), int(my + rdir[1] * 50))
+                cv2.arrowedLine(vis, (mx, my), p_end, PALETTE["arrow"], 3, tipLength=0.25, lineType=cv2.LINE_AA)
+
+    # 4. Lines (Vach dung, Vach nguoc chieu, Dai phan cach)
     for ln in iter_all_lines(cfg):
         p1 = tuple(int(v) for v in ln["p1"])
         p2 = tuple(int(v) for v in ln["p2"])
-        sel = selected is not None and ln["id"] == selected["id"]
-        if role_of(ln) == "divider":
-            col = (0, 0, 255) if sel else (255, 0, 0)
-            cv2.line(vis, p1, p2, col, 3 if sel else 2)
-            tag = f"{ln['id']} [med]"
+        sel = selected is not None and ln["id"] == selected.get("id")
+
+        is_stop = role_of(ln) == "stop_line" or "STOP" in ln["id"].upper()
+        is_divider = role_of(ln) == "divider"
+
+        if sel:
+            col = PALETTE["selected"]
+        elif is_stop:
+            col = PALETTE["stop_line"]
+        elif is_divider:
+            col = PALETTE["divider"]
         else:
-            col = (0, 0, 255) if sel else (0, 255, 0)
-            cv2.line(vis, p1, p2, col, 3 if sel else 2)
-            mx, my = (p1[0] + p2[0]) // 2, (p1[1] + p2[1]) // 2
-            ax, ay = allowed_vec(ln["p1"], ln["p2"], ln.get("allowed_sign", 1))
-            cv2.arrowedLine(vis, (mx, my),
-                            (int(mx + ax * ARROW_LEN), int(my + ay * ARROW_LEN)),
-                            (0, 255, 255), 2)
-            tag = f"{ln['id']} {ln.get('allowed_sign', 1):+d}"
+            col = PALETTE["wrong_way"]
+
+        thick = 4 if is_stop else (3 if sel else 2)
+        cv2.line(vis, p1, p2, col, thick, lineType=cv2.LINE_AA)
+
+        # Endpoint markers
+        draw_point_marker(vis, p1, col, r=4)
+        draw_point_marker(vis, p2, col, r=4)
+
+        mx, my = (p1[0] + p2[0]) // 2, (p1[1] + p2[1]) // 2
+
+        if is_divider:
+            tag = f"{ln[id]} [divider]"
+        elif is_stop:
+            tag = f"{ln[id]} [stop]"
             if ln.get("signal_id"):
-                tag += f" [{ln['signal_id']}]"
-        cv2.putText(vis, tag, (p1[0], p1[1] - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
-    for x, y, _ in clicks:
-        cv2.circle(vis, (int(x), int(y)), 5, (0, 0, 255), -1)
-    for i, (x, y) in enumerate(poly_pts):
-        cv2.circle(vis, (int(x), int(y)), 5, (255, 255, 0), -1)
-        if i:
-            cv2.line(vis, (int(poly_pts[i - 1][0]), int(poly_pts[i - 1][1])),
-                     (int(x), int(y)), (255, 255, 0), 2)
-    for i, (x, y) in enumerate(calib_pts or []):
-        cv2.circle(vis, (int(x), int(y)), 6, (255, 0, 255), -1)
-        cv2.putText(vis, f"P{i + 1}", (int(x) + 8, int(y) - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+                tag += f" -> {ln[signal_id]}"
+        else:
+            ax, ay = allowed_vec(ln["p1"], ln["p2"], ln.get("allowed_sign", 1))
+            arrow_end = (int(mx + ax * ARROW_LEN), int(my + ay * ARROW_LEN))
+            cv2.arrowedLine(vis, (mx, my), arrow_end, PALETTE["arrow"], 2, tipLength=0.25, lineType=cv2.LINE_AA)
+            tag = f"{ln[id]} {ln.get(allowed_sign, 1):+d}"
+            if ln.get("signal_id"):
+                tag += f" -> {ln[signal_id]}"
+
+        draw_pill_badge(vis, tag, (mx - 15, my - 8), border_col=col, font_scale=0.45)
+
+    # 5. Clicks dang ve dở dang
+    for i, c in enumerate(clicks):
+        x, y = int(c[0]), int(c[1])
+        draw_point_marker(vis, (x, y), PALETTE["selected"], r=5, label=f"pt{i+1}")
+
+    # 6. Poly pts dang ve dở dang
+    if poly_pts:
+        pts = [(int(x), int(y)) for x, y in poly_pts]
+        for i in range(1, len(pts)):
+            cv2.line(vis, pts[i - 1], pts[i], PALETTE["speeding"], 2, lineType=cv2.LINE_AA)
+        if len(pts) >= 3:
+            pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+            overlay = vis.copy()
+            cv2.fillPoly(overlay, [pts_arr], PALETTE["speeding"])
+            cv2.addWeighted(overlay, 0.14, vis, 0.86, 0, vis)
+            cv2.line(vis, pts[-1], pts[0], PALETTE["speeding"], 1, cv2.LINE_AA)
+        for i, pt in enumerate(pts):
+            draw_point_marker(vis, pt, PALETTE["speeding"], r=5, label=f"{i+1}")
+
+    # 7. Calib pts dang cham (4 diem Homography)
+    if calib_pts:
+        c_pts = [(int(x), int(y)) for x, y in calib_pts]
+        if len(c_pts) >= 2:
+            draw_dashed_polyline(vis, c_pts, PALETTE["homography"], thickness=2, dash_len=8, gap_len=6, closed=(len(c_pts) == 4))
+        if len(c_pts) == 4:
+            pts_arr = np.array(c_pts, dtype=np.int32).reshape((-1, 1, 2))
+            overlay = vis.copy()
+            cv2.fillPoly(overlay, [pts_arr], PALETTE["homography"])
+            cv2.addWeighted(overlay, 0.18, vis, 0.82, 0, vis)
+        for i, pt in enumerate(c_pts):
+            draw_point_marker(vis, pt, PALETTE["homography"], r=6, label=f"P{i+1}", label_col=PALETTE["homography"])
+
+    # 8. Calib dir dang cham (Huong road_dir)
     if calib_dir and len(calib_dir) == 2:
         (ax, ay), (bx, by) = calib_dir
         cv2.arrowedLine(vis, (int(ax), int(ay)), (int(bx), int(by)),
-                        (255, 0, 255), 3)
-    y = 30
+                        PALETTE["arrow"], 3, tipLength=0.25, lineType=cv2.LINE_AA)
+        draw_point_marker(vis, (ax, ay), PALETTE["arrow"], r=5, label="A (Dau)")
+        draw_point_marker(vis, (bx, by), PALETTE["arrow"], r=5, label="B (Huong)")
+
+    # 9. Pairs (Cap line U-Turn)
+    y = 85
     for i, p in enumerate(pairs):
-        cv2.putText(vis, f"pair{i}: {p['first']}->{p['second']}" + (f" med={p['medial']}" if p.get("medial") else ""),
-                    (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 0, 255), 2)
-        y += 22
+        text = f"pair{i}: {p[first]} -> {p[second]}" + (f" [med={p[medial]}]" if p.get("medial") else "")
+        draw_pill_badge(vis, text, (vis.shape[1] - 250, y), border_col=PALETTE["no_uturn"], font_scale=0.42)
+        y += 24
+
     return vis
 
 
@@ -661,39 +865,53 @@ def main():
                        calib_pts=calib["pts"] if calib else None,
                        calib_dir=(calib["pts"][:2]
                                   if calib and calib["stage"] == "dir" else None))
+        # Thanh dieu khien HUD phong cach Dashboard hien dai
+        hud_h = 68
+        w = vis.shape[1]
+        sub = vis[0:hud_h, 0:w]
+        dark = np.full_like(sub, PALETTE["dark_bg"])
+        cv2.addWeighted(dark, 0.90, sub, 0.10, 0, sub)
+        cv2.line(vis, (0, hud_h), (w, hud_h), (51, 65, 85), 1, lineType=cv2.LINE_AA)
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
         if violation is None:
             banner1 = f"{menu_text()} | S=luu Q=thoat"
+            cv2.putText(vis, banner1, (14, 26), font, 0.48, (226, 232, 240), 1, lineType=cv2.LINE_AA)
         else:
             m = get_mode(violation)
             assert m is not None, violation
-            banner1 = (f"LOI {m['label']} | tool: "
-                       f"{'  '.join(tools_help(violation))} | 0=doi loi S=luu Q=thoat")
-        cv2.putText(vis, banner1,
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
+            mode_color = PALETTE.get(m.get("violation", ""), (16, 185, 129))
+            draw_pill_badge(vis, f"LOI: {m[label]}", (14, 24), border_col=mode_color, bg_col=(30, 41, 59), font_scale=0.48)
+            tools_txt = f"Cong cu: {'  '.join(tools_help(violation))} | 0=doi loi | S=luu | Q=thoat"
+            cv2.putText(vis, tools_txt, (260, 24), font, 0.46, (226, 232, 240), 1, lineType=cv2.LINE_AA)
+
         sel = st.selected["id"] if st.selected else (
             sel_signal["id"] if sel_signal else (
                 sel_poly["id"] if sel_poly else "-"))
         n_lines = len(cfg.get("lines", [])) + sum(
             len(p.get("lines", [])) for p in get_polygons(cfg))
         n_sigs = len(cfg.get("signals", []))
-        cv2.putText(vis, f"MODE={'STANDALONE-WW' if standalone else mode_label(wizard, tool_mode, st.mode)} lines={n_lines} "
-                         f"poly={len(get_polygons(cfg))} sigs={n_sigs} "
-                         f"pairs={len(all_pairs(cfg))} sel={sel} "
-                         "| dblclick=chon F=dao chieu X=xoa U=go-den K=gan-den Esc=huy",
-                    (10, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
-        y0 = 108
+        hud_row2 = (f"MODE={'STANDALONE-WW' if standalone else mode_label(wizard, tool_mode, st.mode)} | "
+                    f"lines={n_lines} | poly={len(get_polygons(cfg))} | sigs={n_sigs} | "
+                    f"pairs={len(all_pairs(cfg))} | sel={sel} | "
+                    "dblclick=chon F=dao X=xoa U=go-den K=gan-den Esc=huy")
+        cv2.putText(vis, hud_row2, (14, 52), font, 0.44, (148, 163, 184), 1, lineType=cv2.LINE_AA)
+
+        # Polygon rules active list
+        y0 = hud_h + 24
         for p in get_polygons(cfg):
             on = [r for r in ("wrong_way", "no_uturn", "no_entry_road", "no_parking", "no_gathering", "red_light_running", "stop_line")
                   if (p.get("rules") or {}).get(r, {}).get("enable", True)]
-            cv2.putText(vis, f"{p['id']}: {'+'.join(on) if on else 'tat het'}",
-                        (10, y0), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                        (0, 255, 255), 2)
-            y0 += 20
-            if y0 > frame.shape[0] - 10:
+            p_col, _ = get_polygon_color_and_label(p)
+            poly_info = f"{p[id]}: {'+'.join(on) if on else 'tat het'}"
+            draw_pill_badge(vis, poly_info, (14, y0), border_col=p_col, font_scale=0.42, pad_x=4, pad_y=2)
+            y0 += 22
+            if y0 > frame.shape[0] - 20:
                 break
+
         if msg:
-            cv2.putText(vis, msg, (10, 82),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            draw_pill_badge(vis, f"ALERT: {msg}", (14, hud_h + 30), border_col=(50, 50, 255),
+                            bg_col=(50, 10, 10), font_scale=0.52, pad_x=8, pad_y=4)
         cv2.imshow("draw_lines", vis)
         key = cv2.waitKey(20) & 0xFF
         msg = ""
