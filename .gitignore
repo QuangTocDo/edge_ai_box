@@ -21,11 +21,7 @@ tests/
 test/
 
 # ================= Docs / Markdown =================
-# Track docs + README
-# *.md
-# docs/
-# Ignore other noisy markdown only if needed:
-# *.log
+docs/
 
 # ================= Local runtime configs =================
 # Bản active của máy local (copy từ camera_config.yaml), không commit

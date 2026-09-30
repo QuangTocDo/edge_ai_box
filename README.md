@@ -358,11 +358,3 @@ tests/test_visualizer.py ...                                             [100%]
 ============================= 140 passed in 15.7s ==============================
 ```
 
----
-
-## 📖 Tài liệu liên quan
-
-* [Hướng dẫn chạy chi tiết (Local & RTSP)](docs/HUONG_DAN_CHAY.md)
-* [Kế hoạch phát triển kiến trúc (Project Plan)](docs/PROJECT_PLAN.md)
-* [Quản lý mô hình và phiên bản weights](models/README.md)
-* [Quy chuẩn cấu hình YAML](configs/README.md)
