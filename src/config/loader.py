@@ -69,13 +69,20 @@ def normalize(cfg):
     cfg.setdefault("uturn_pairs", [])
     for name in RULES:
         cfg.setdefault(name, {})
-    # Chuan hoa alias rule global: red_light -> red_light_running, stop_line -> stop_line_violation
+    # Chuan hoa alias rule global: red_light <-> red_light_running, stop_line <-> stop_line_violation
     if "stop_line" in cfg:
         cfg.setdefault("stop_line_violation", {})
-        cfg["stop_line_violation"] = {**cfg.pop("stop_line"), **cfg["stop_line_violation"]}
+        cfg["stop_line_violation"] = {**cfg["stop_line"], **cfg["stop_line_violation"]}
+        cfg["stop_line"] = dict(cfg["stop_line_violation"])
+    elif "stop_line_violation" in cfg:
+        cfg["stop_line"] = dict(cfg["stop_line_violation"])
+
     if "red_light" in cfg:
         cfg.setdefault("red_light_running", {})
-        cfg["red_light_running"] = {**cfg.pop("red_light"), **cfg["red_light_running"]}
+        cfg["red_light_running"] = {**cfg["red_light"], **cfg["red_light_running"]}
+        cfg["red_light"] = dict(cfg["red_light_running"])
+    elif "red_light_running" in cfg:
+        cfg["red_light"] = dict(cfg["red_light_running"])
 
     for p in cfg["polygons"]:
         # dich legacy `handler: [wrong_way, ...]` -> rules enable map
@@ -90,24 +97,36 @@ def normalize(cfg):
             rules["red_light_running"] = rules.pop("red_light")
         p.setdefault("lines", [])
 
-    # Tu dong gan lines top-level co signal_id vao polygon co rule red/stop neu line o gan hoac chi co 1 polygon
+    # Tu dong gan lines top-level co signal_id vao polygon co rule red/stop neu line o gan
+    # Hoac neu line da ton tai trong bat ky polygon explicit nao, tranh duplicate vao __GLOBAL__
     from ..utils.geometry import line_near_or_in_polygon
+    poly_line_ids = set()
+    for p in cfg.get("polygons", []):
+        for ln in p.get("lines", []):
+            if isinstance(ln, dict) and "id" in ln:
+                poly_line_ids.add(ln["id"])
+
     flat_lines = cfg.get("lines") or []
     remaining_flat = []
     for ln in flat_lines:
+        if not isinstance(ln, dict):
+            continue
+        lid = ln.get("id")
+        if lid in poly_line_ids:
+            # Da co trong polygon explicit, khong them vao flat lines tranh trung lap
+            continue
         attached_poly = None
         if ln.get("signal_id"):
-            red_polys = [p for p in cfg["polygons"] if p.get("id") != IMPLICIT_ID and (
-                (p.get("rules") or {}).get("red_light_running") or
-                (p.get("rules") or {}).get("stop_line_violation"))]
+            red_polys = [p for p in cfg["polygons"] if p.get("id") != IMPLICIT_ID and p.get("kind") != "intersection" and (
+                ((p.get("rules") or {}).get("red_light_running") or {}).get("enable", True) is not False or
+                ((p.get("rules") or {}).get("stop_line_violation") or {}).get("enable", True) is not False)]
             for p in red_polys:
                 if line_near_or_in_polygon(ln["p1"], ln["p2"], p.get("polygon") or [], max_dist=80.0):
                     attached_poly = p
                     break
-            if attached_poly is None and len(red_polys) == 1:
-                attached_poly = red_polys[0]
         if attached_poly is not None:
             attached_poly.setdefault("lines", []).append(ln)
+            poly_line_ids.add(lid)
         else:
             remaining_flat.append(ln)
     cfg["lines"] = remaining_flat
@@ -126,6 +145,13 @@ def normalize(cfg):
 
     for p in cfg["polygons"]:
         rules = p.get("rules") or {}
+        from ..business.rules import RULE_REGISTRY
+        for rname, rblock in list(rules.items()):
+            if isinstance(rblock, dict) and rname in RULE_REGISTRY:
+                valid_keys = set(RULE_REGISTRY[rname].PARAMS.keys()) | {"enable"}
+                for k in list(rblock.keys()):
+                    if k not in valid_keys:
+                        rblock.pop(k, None)
         r = {k: (v or {}).get("enable", True) for k, v in rules.items()}
         # Tu dong alias speed_limit_kmh -> limit_kmh
         sp = (p.get("rules") or {}).get("speeding")
@@ -150,12 +176,18 @@ def normalize(cfg):
                     "allowed_sign": 1,
                 }]
         # Tu dong gan signal_id neu chi co 1 signal va line chua co signal_id
-        if r.get("red_light_running") or r.get("stop_line_violation"):
-            sigs = cfg.get("signals", [])
-            if len(sigs) == 1:
-                default_sid = sigs[0]["id"]
-                for ln in p["lines"]:
-                    if ln.get("role") != "divider" and not ln.get("signal_id"):
+        sigs = cfg.get("signals", [])
+        if len(sigs) == 1:
+            default_sid = sigs[0]["id"]
+            for ln in p.get("lines", []):
+                if ln.get("role") != "divider" and not ln.get("signal_id"):
+                    if (
+                        ln.get("role") == "stop"
+                        or "STOP" in str(ln.get("id", "")).upper()
+                        or r.get("red_light_running")
+                        or r.get("stop_line_violation")
+                        or p.get("id") == IMPLICIT_ID
+                    ):
                         ln["signal_id"] = default_sid
         if p.get("kind") == "banned":
             p.setdefault("entry_lines", [])
@@ -216,7 +248,7 @@ def validate(cfg):
             if k != "enable" and k not in RULE_REGISTRY[name].PARAMS:
                 raise ConfigError(
                     f"global '{name}': param la '{k}' "
-                    f"(hop le: {sorted(RULE_REGISTRY[name].PARAMS)})\")")
+                    f"(hop le: {sorted(RULE_REGISTRY[name].PARAMS)})\\')")
     pids = [p.get("id") for p in cfg["polygons"]]
     if len(pids) != len(set(pids)):
         raise ConfigError("Trung id polygon")
@@ -229,10 +261,13 @@ def validate(cfg):
             raise ConfigError(f"Signal {s.get('id')}: roi phai co 4 so")
     lids = []
     for p in cfg["polygons"]:
-        lids += [ln.get("id") for ln in p.get("lines", [])]
-    lids += [ln.get("id") for ln in cfg.get("lines", [])]
+        lids += [ln.get("id") for ln in p.get("lines", []) if isinstance(ln, dict) and ln.get("id")]
+    lids += [ln.get("id") for ln in cfg.get("lines", []) if isinstance(ln, dict) and ln.get("id")]
     if len(lids) != len(set(lids)):
-        raise ConfigError("Trung id line (tinh ca nested)")
+        from collections import Counter
+        counts = Counter(lids)
+        dup_ids = [lid for lid, cnt in counts.items() if cnt > 1]
+        raise ConfigError(f"Trung id line (tinh ca nested): {dup_ids}")
     all_ids = set(lids)
     for p in cfg["polygons"]:
         pid = p.get("id")
@@ -247,7 +282,7 @@ def validate(cfg):
                 if k != "enable" and k not in RULE_REGISTRY[rname].PARAMS:
                     raise ConfigError(
                         f"{pid}: param la '{rname}.{k}' "
-                        f"(hop le: {sorted(RULE_REGISTRY[rname].PARAMS)})\")")
+                        f"(hop le: {sorted(RULE_REGISTRY[rname].PARAMS)})\\')")
         r = {k: (v or {}).get("enable", True)
              for k, v in (p.get("rules") or {}).items() if k in RULES}
         ndir = [ln for ln in p.get("lines", [])
@@ -257,8 +292,9 @@ def validate(cfg):
                 raise ConfigError(f"{pid}: no_uturn bat nhung thieu uturn_pairs")
         if p.get("kind") != "trajectory" and r.get("no_uturn") \
                 and not p.get("uturn_pairs"):
-            warns.append(f"{pid}: no_uturn bat nhung uturn_pairs rong "
-                         "-> rule khong bao gio ban (them pair trong tool phim 3)")
+            # Neu co polygon hoac co lines thi pipeline ho tro tu xu ly
+            if not p.get("polygon") and not p.get("lines"):
+                warns.append(f"{pid}: no_uturn bat nhung thieu ca polygon lan uturn_pairs")
         if p.get("kind") == "banned" and r.get("no_entry_road"):
             if not p.get("banned_classes"):
                 raise ConfigError(f"{pid}: no_entry bat nhung thieu banned_classes")
@@ -294,7 +330,7 @@ def validate(cfg):
     for p in cfg["polygons"]:
         mine = {ln.get("id") for ln in p.get("lines", [])}
         for pr in list(p.get("uturn_pairs", [])) + list(p.get("_pairs", [])):
-            _check_pair(pr, p["id"], all_ids, mine)
+            _check_pair(pr, p["id"], all_ids, mine if mine else None)
     return warns
 
 
@@ -314,6 +350,10 @@ def _check_pair(pr, pid, all_ids, mine=None):
 def effective_params(cfg, poly, rule):
     """Params hieu dung = global override boi polygon (bo key enable)."""
     base = {k: v for k, v in cfg.get(rule, {}).items() if k != "enable"}
+    if rule == "red_light_running":
+        base = {**{k: v for k, v in cfg.get("red_light", {}).items() if k != "enable"}, **base}
+    elif rule == "stop_line_violation":
+        base = {**{k: v for k, v in cfg.get("stop_line", {}).items() if k != "enable"}, **base}
     over = (poly.get("rules") or {}).get(rule) or {}
     over = {k: v for k, v in over.items() if k != "enable"}
     return {**base, **over}
@@ -324,6 +364,18 @@ def is_enabled(cfg, poly, rule):
     if rule in poly_rules:
         return bool(poly_rules[rule].get("enable", True))
 
+    # Doi voi IMPLICIT_ID (__GLOBAL__): Cho phep red_light_running va stop_line_violation
+    # neu co line chua signal_id va rule khong bi tat o global config
+    if poly.get("id") == IMPLICIT_ID and rule in ("red_light_running", "stop_line_violation"):
+        has_sig = any(ln.get("signal_id") and ln.get("role") != "divider" for ln in poly.get("lines", []))
+        if has_sig:
+            g = cfg.get(rule, {}).get("enable", True)
+            if rule == "red_light_running":
+                g = cfg.get("red_light", {}).get("enable", g)
+            elif rule == "stop_line_violation":
+                g = cfg.get("stop_line", {}).get("enable", g)
+            return bool(g)
+
     # Cac rule dac thu ve vung/thiet bi chi ap dung khi duoc khai bao truc tiep trong polygon
     if rule in ("no_parking", "no_gathering", "speeding", "red_light_running", "stop_line_violation"):
         return False
@@ -331,9 +383,11 @@ def is_enabled(cfg, poly, rule):
     g = cfg.get(rule, {}).get("enable", True)
     return bool(g)
 
+
 def resolve_plan(cfg):
     """Dung san _plan: [{polygon|None, rule, params, lines, pairs}]."""
     plan = []
+    implicit_poly = next((poly for poly in cfg.get("polygons", []) if poly.get("id") == IMPLICIT_ID), None)
     for p in cfg["polygons"]:
         lines = p.get("lines", [])
         for rule in RULES:
@@ -346,11 +400,34 @@ def resolve_plan(cfg):
                                        if ln.get("role") != "divider"],
                              "pairs": []})
             elif rule == "no_uturn":
-                pairs = list(p.get("uturn_pairs", []))\
-                    + list(p.get("_pairs", []))
+                p_lines = list(lines)
+                # Neu polygon chua co lines rieng, lay tu implicit/global neu co line uturn
+                if not p_lines:
+                    source_lines = (implicit_poly.get("lines", []) if implicit_poly else []) + cfg.get("lines", [])
+                    p_lines = [ln for ln in source_lines if isinstance(ln, dict) and (ln.get("role") == "uturn" or "UTURN" in str(ln.get("id", "")).upper())]
+                p_line_ids = {ln.get("id") for ln in p_lines if isinstance(ln, dict)}
+
+                pairs = list(p.get("uturn_pairs", [])) + list(p.get("_pairs", []))
+                for tpr in cfg.get("uturn_pairs", []):
+                    if isinstance(tpr, dict) and (tpr.get("first") in p_line_ids or tpr.get("second") in p_line_ids or not p_line_ids):
+                        if tpr not in pairs:
+                            pairs.append(tpr)
+                if implicit_poly:
+                    for tpr in implicit_poly.get("_pairs", []):
+                        if isinstance(tpr, dict) and (tpr.get("first") in p_line_ids or tpr.get("second") in p_line_ids or not p_line_ids):
+                            if tpr not in pairs:
+                                pairs.append(tpr)
+
+                # Tu dong sinh cap quay dau (bidirectional) neu co >= 2 lines ma pairs rong
+                if not pairs and len(p_lines) >= 2:
+                    d_lines = [ln for ln in p_lines if ln.get("role") != "divider"]
+                    if len(d_lines) >= 2:
+                        pairs.append({"first": d_lines[0]["id"], "second": d_lines[1]["id"]})
+                        pairs.append({"first": d_lines[1]["id"], "second": d_lines[0]["id"]})
+
                 plan.append({"polygon": p, "rule": rule,
                              "params": effective_params(cfg, p, rule),
-                             "lines": lines, "pairs": pairs})
+                             "lines": p_lines, "pairs": pairs})
             elif rule == "no_entry_road":
                 if p.get("kind") != "banned" or p["id"] == IMPLICIT_ID:
                     continue
@@ -384,7 +461,8 @@ def resolve_plan(cfg):
                                      "params": effective_params(cfg, p, rule),
                                      "lines": sig_lines,
                                      "pairs": [],
-                                     "clearance": []})
+                                     "clearance": _resolve_clearance(
+                                         cfg, p, effective_params(cfg, p, rule))})
                     continue
                 plan.append({"polygon": p, "rule": rule,
                              "params": effective_params(cfg, p, rule),
@@ -401,7 +479,8 @@ def _resolve_clearance(cfg, poly, params):
     thanh list polygon objects. Khong co -> []."""
     ref = params.get("intersection_clearance_zone")
     if not ref:
-        return []
+        inter_polys = [p for p in cfg.get("polygons", []) if p.get("kind") == "intersection"]
+        return inter_polys
     ids = [ref] if isinstance(ref, str) else list(ref)
     by_id = {str(p.get("id")): p for p in cfg.get("polygons", [])}
     out = []
@@ -434,6 +513,42 @@ def entries_for(bc, plan, containing_fn, track=None):
                for clr in e.get("clearance", [])):
             out.append(e)
             continue
+        # Voi red_light_running va stop_line_violation, neu track o gan bat ky stop line nao trong entry (<= 150px)
+        # hoac quy dao cat qua line, track phai duoc kiem tra
+        if e.get("rule") in ("red_light_running", "stop_line_violation"):
+            sig_lines = [ln for ln in e.get("lines", []) if ln.get("signal_id")]
+            if sig_lines:
+                from ..utils.geometry import dist_pt_seg
+                if any(dist_pt_seg(bc, ln["p1"], ln["p2"]) <= 150.0 for ln in sig_lines):
+                    out.append(e)
+                    continue
+                if track is not None and len(getattr(track, "pts", [])) >= 2:
+                    p_prev = track.pts[-2]
+                    from ..utils.geometry import seg_intersect
+                    if any(seg_intersect(p_prev, bc, ln["p1"], ln["p2"]) for ln in sig_lines):
+                        out.append(e)
+                        continue
+        # Voi no_uturn: neu track dang giu co line_flags cua 1 vach trong entry, hoac dang theo doi
+        # quy dao quay dau trong polygon, hoac o gan lines -> van phai giu lai
+        if e.get("rule") == "no_uturn":
+            elids = {ln.get("id") for ln in e.get("lines", []) if isinstance(ln, dict)}
+            if any(lid in elids for lid in getattr(track, "line_flags", {})):
+                out.append(e)
+                continue
+            traj = getattr(track, "_uturn_traj", {})
+            if p.get("id") in traj:
+                out.append(e)
+                continue
+            if e.get("lines"):
+                from ..utils.geometry import dist_pt_seg, seg_intersect
+                if any(dist_pt_seg(bc, ln["p1"], ln["p2"]) <= 150.0 for ln in e["lines"] if "p1" in ln and "p2" in ln):
+                    out.append(e)
+                    continue
+                if track is not None and len(getattr(track, "pts", [])) >= 2:
+                    p_prev = track.pts[-2]
+                    if any(seg_intersect(p_prev, bc, ln["p1"], ln["p2"]) for ln in e["lines"] if "p1" in ln and "p2" in ln):
+                        out.append(e)
+                        continue
         # Neu track dang co candidate active tren line cua entry nay, van tiep tuc theo doi
         if track is not None:
             # Ho tro kiem tra ca tam xe (center) ngoai bottom_center cho bounding box
@@ -451,8 +566,8 @@ def entries_for(bc, plan, containing_fn, track=None):
             rs = getattr(track, "red", None)
             if rs:
                 elids = {ln.get("id") for ln in e.get("lines", [])}
-                if any(lid in elids for lid, c in rs.get("cands", {}).items() if not c.get("fired")) or \
-                   any(lid in elids for lid, c in rs.get("stops", {}).items() if not c.get("fired")):
+                if any(lid in elids for lid in rs.get("cands", {}).items() if not c.get("fired")) or \
+                   any(lid in elids for lid in rs.get("stops", {}).items() if not c.get("fired")):
                     out.append(e)
                     continue
             rev = getattr(track, "reverse", None)

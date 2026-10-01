@@ -18,6 +18,8 @@ import {
   Sliders,
   ChevronDown,
   ChevronUp,
+  ArrowLeftRight,
+  Repeat,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -171,7 +173,9 @@ export function CalibratePage() {
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
 
   const [activeRule, setActiveRule] = useState<RuleKey>("speeding");
-  const [drawSubMode, setDrawSubMode] = useState<"poly" | "arrow" | "stop" | "light">("poly");
+  const [drawSubMode, setDrawSubMode] = useState<"poly" | "arrow" | "stop" | "light" | "clearance" | "lines" | "pairs">("poly");
+  const [firstPairLine, setFirstPairLine] = useState<string>("");
+  const [secondPairLine, setSecondPairLine] = useState<string>("");
 
   // Speeding (Ho tro ve polygon tuy y + hieu chuan 4 diem H + road_dir)
   const [speedZones, setSpeedZones] = useState<SpeedZone[]>([]);
@@ -185,9 +189,11 @@ export function CalibratePage() {
   const [preview, setPreview] = useState<HomographyPreview | null>(null);
 
   // Red Light & Stop Lines (Ho tro nhieu vach dung STOP_1, STOP_2... theo tung lan xe)
-  const [stopLines, setStopLines] = useState<Array<{ id: string; p1: number[]; p2: number[]; role?: string }>>([]);
+  const [stopLines, setStopLines] = useState<Array<{ id: string; p1: number[]; p2: number[]; role?: string; allowed_sign?: number; signal_id?: string }>>([]);
   const [stopPts, setStopPts] = useState<number[][]>([]);
+  const [stopAllowedSign, setStopAllowedSign] = useState<number>(1);
   const [lightPts, setLightPts] = useState<number[][]>([]);
+  const [clearancePts, setClearancePts] = useState<number[][]>([]);
 
   // Committed zones for wrong_way, no_uturn, no_entry, no_parking, no_gathering
   const [customZones, setCustomZones] = useState<CustomZone[]>([]);
@@ -229,7 +235,18 @@ export function CalibratePage() {
 
         // 1. Homography / Speeding zones (Nap toan bo cac vung toc do SPEED_1, SPEED_2...)
         const rawSpeedPolys = (cfg.polygons || []).filter(
-          (p: any) => p.homography?.src?.length === 4 || p.rules?.speeding || p.id?.startsWith("SPEED_")
+          (p: any) =>
+            p.kind !== "intersection" &&
+            p.id !== "POLY_INTERSECTION" &&
+            !p.rules?.no_uturn?.enable &&
+            !p.rules?.no_entry_road?.enable &&
+            !p.rules?.no_parking?.enable &&
+            !p.rules?.no_gathering?.enable &&
+            !p.rules?.red_light_running?.enable &&
+            !p.rules?.stop_line_violation?.enable &&
+            ((p.homography?.src?.length === 4 && p.rules?.speeding?.enable !== false) ||
+              p.rules?.speeding?.enable === true ||
+              (p.id?.startsWith("SPEED_") && p.rules?.speeding?.enable !== false))
         );
         const parsedSpeedZones: SpeedZone[] = rawSpeedPolys.map((p: any, idx: number) => {
           const poly = p.polygon || p.homography?.src || [];
@@ -258,7 +275,7 @@ export function CalibratePage() {
         // 2. Stop Lines & Traffic Lines (Nap toan bo vach dung theo tung lan)
         if (cfg.lines) {
           const stops = cfg.lines.filter(
-            (ln: any) => ln.id?.toUpperCase().includes("STOP") || ln.role === "stop"
+            (ln: any) => ln.id?.toUpperCase().includes("STOP") || ln.role === "stop" || Boolean(ln.signal_id)
           );
           setStopLines(stops);
           const otherLines = cfg.lines.filter((ln: any) => !stops.includes(ln) && ln.p1 && ln.p2);
@@ -282,6 +299,20 @@ export function CalibratePage() {
           setExistingSignals([]);
         }
 
+        // 2b. Intersection / Clearance Zone
+        const interPoly = (cfg.polygons || []).find(
+          (p: any) =>
+            p.kind === "intersection" ||
+            p.id === "POLY_INTERSECTION" ||
+            p.id === cfg.red_light?.intersection_clearance_zone ||
+            p.id === cfg.red_light_running?.intersection_clearance_zone
+        );
+        if (interPoly && Array.isArray(interPoly.polygon)) {
+          setClearancePts(interPoly.polygon);
+        } else {
+          setClearancePts([]);
+        }
+
         // 3.5. U-Turn and Medial Pairs
         if (cfg.uturn_pairs && Array.isArray(cfg.uturn_pairs)) {
           setExistingPairs(cfg.uturn_pairs);
@@ -293,6 +324,7 @@ export function CalibratePage() {
         const zones: CustomZone[] = [];
         cfg.polygons?.forEach((p) => {
           if (!p.polygon || p.polygon.length < 3) return;
+          if (p.kind === "intersection" || p.id === "POLY_INTERSECTION") return;
           const rules = p.rules || {};
 
           let matchedRule: RuleKey | null = null;
@@ -319,9 +351,12 @@ export function CalibratePage() {
               rule_type: matchedRule,
               polygon: p.polygon,
               arrow,
-              dwell_s: rules[matchedRule]?.dwell_s ?? p.dwell_s ?? 2.0,
-              min_persons: rules[matchedRule]?.min_persons ?? p.min_persons ?? 5,
-              speed_limit_kmh: rules[matchedRule]?.speed_limit_kmh ?? 50,
+              dwell_s:
+                matchedRule === "no_entry_road" || matchedRule === "no_parking" || matchedRule === "no_gathering"
+                  ? (rules[matchedRule]?.dwell_s ?? p.dwell_s ?? 2.0)
+                  : undefined,
+              min_persons: matchedRule === "no_gathering" ? (rules[matchedRule]?.min_persons ?? p.min_persons ?? 5) : undefined,
+              speed_limit_kmh: undefined,
             });
           }
         });
@@ -361,13 +396,21 @@ export function CalibratePage() {
     } else if (activeRule === "red_light") {
       if (drawSubMode === "stop") {
         setStopPts((v) => (v.length >= 2 ? v : [...v, p]));
-      } else {
+      } else if (drawSubMode === "light") {
         setLightPts((v) => (v.length >= 2 ? [p] : [...v, p]));
+      } else if (drawSubMode === "clearance") {
+        setClearancePts((v) => [...v, p]);
+      }
+    } else if (activeRule === "no_uturn") {
+      if (drawSubMode === "lines") {
+        setDraftLine((v) => (v.length >= 2 ? [p] : [...v, p]));
+      } else {
+        setDraftPoly((v) => [...v, p]);
       }
     } else if (activeRule === "wrong_way") {
       setDraftLine((v) => (v.length >= 2 ? [p] : [...v, p]));
     } else {
-      // polygon rules: no_uturn, no_entry_road, no_parking, no_gathering
+      // polygon rules: no_entry_road, no_parking, no_gathering
       setDraftPoly((v) => [...v, p]);
     }
   }
@@ -385,7 +428,11 @@ export function CalibratePage() {
       setRectPts((v) => v.slice(0, -1));
     } else if (activeRule === "red_light") {
       if (drawSubMode === "stop") setStopPts((v) => v.slice(0, -1));
-      else setLightPts((v) => v.slice(0, -1));
+      else if (drawSubMode === "light") setLightPts((v) => v.slice(0, -1));
+      else if (drawSubMode === "clearance") setClearancePts((v) => v.slice(0, -1));
+    } else if (activeRule === "no_uturn") {
+      if (drawSubMode === "lines") setDraftLine((v) => v.slice(0, -1));
+      else setDraftPoly((v) => v.slice(0, -1));
     } else if (activeRule === "wrong_way") {
       setDraftLine((v) => v.slice(0, -1));
     } else {
@@ -400,12 +447,17 @@ export function CalibratePage() {
       setSpeedArrow([]);
       setPreview(null);
     } else if (activeRule === "red_light") {
-      if (stopPts.length > 0 || lightPts.length > 0) {
+      if (drawSubMode === "clearance") {
+        setClearancePts([]);
+      } else if (stopPts.length > 0 || lightPts.length > 0) {
         deleteEntireRedLightRule();
       } else {
         setStopPts([]);
         setLightPts([]);
       }
+    } else if (activeRule === "no_uturn") {
+      if (drawSubMode === "lines") setDraftLine([]);
+      else setDraftPoly([]);
     } else if (activeRule === "wrong_way") {
       setDraftLine([]);
     } else {
@@ -419,7 +471,7 @@ export function CalibratePage() {
     setError("");
     setSyncStatus("");
     const count = customZones.filter((z) => z.rule_type === activeRule).length + 1;
-    const zoneId = `${activeRule.toUpperCase()}_${count}`;
+    const zoneId = activeRule === "no_uturn" ? `ZONE_NO_UTURN_${count}` : `${activeRule.toUpperCase()}_${count}`;
     const newZone: CustomZone = {
       id: zoneId,
       rule_type: activeRule,
@@ -586,17 +638,20 @@ export function CalibratePage() {
     let idx = 1;
     while (used.has(`STOP_${idx}`)) idx++;
     const stopId = `STOP_${idx}`;
+    const targetSig = existingSignals.length > 0 ? existingSignals[0].id : "SIGNAL_1";
     const payload = {
       id: stopId,
       p1: stopPts[0],
       p2: stopPts[1],
       role: "stop",
+      allowed_sign: stopAllowedSign,
+      signal_id: targetSig,
     };
     try {
       await api.saveCameraLine(cameraId, payload);
       setStopLines((prev) => [...prev.filter((l) => l.id !== stopId), payload]);
       setStopPts([]);
-      setSyncStatus(`✓ Đã ghi vạch dừng ${stopId} vào active.yaml!`);
+      setSyncStatus(`✓ Đã ghi vạch dừng ${stopId} (đèn: ${targetSig}, hướng: ${stopAllowedSign > 0 ? "+1" : "-1"}) vào active.yaml!`);
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
     } catch (err) {
@@ -661,6 +716,39 @@ export function CalibratePage() {
     }
   }
 
+  async function saveClearanceZone() {
+    if (clearancePts.length < 3) return;
+    setError("");
+    setSyncStatus("");
+    const polyPayload: any = {
+      id: "POLY_INTERSECTION",
+      kind: "intersection",
+      polygon: clearancePts,
+      rules: {},
+    };
+    try {
+      await api.saveCameraPolygon(cameraId, polyPayload);
+      setSyncStatus(`✓ Đã ghi vùng giao lộ POLY_INTERSECTION (${clearancePts.length} điểm) vào active.yaml!`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function removeClearanceZone() {
+    if (!window.confirm("Xác nhận xóa vùng giao lộ khỏi active.yaml?")) return;
+    try {
+      await api.deleteCameraPolygon(cameraId, "POLY_INTERSECTION");
+      setClearancePts([]);
+      setSyncStatus("✓ Đã xóa vùng giao lộ khỏi active.yaml!");
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   async function deleteEntireRedLightRule() {
     if (!window.confirm("Xác nhận xóa TOÀN BỘ cấu hình Vượt đèn đỏ & Đè vạch (tất cả vạch dừng + hộp đèn) khỏi active.yaml?")) return;
     try {
@@ -670,13 +758,46 @@ export function CalibratePage() {
       for (const sig of existingSignals) {
         try { await api.deleteCameraSignal(cameraId, sig.id); } catch (_) {}
       }
+      try { await api.deleteCameraPolygon(cameraId, "POLY_INTERSECTION"); } catch (_) {}
       setStopLines([]);
       setExistingSignals([]);
       setStopPts([]);
       setLightPts([]);
+      setClearancePts([]);
       setSyncStatus("✓ Đã xóa hoàn toàn cấu hình Vượt đèn đỏ & Đè vạch khỏi configs/active.yaml!");
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function commitUturnLine() {
+    if (draftLine.length !== 2) return;
+    setError("");
+    setSyncStatus("");
+    const used = new Set([
+      ...existingLines.map((l) => l.id),
+      ...stopLines.map((l) => l.id),
+    ]);
+    let idx = 1;
+    while (used.has(`UTURN_L${idx}`)) idx++;
+    const lid = `UTURN_L${idx}`;
+    const payload = {
+      id: lid,
+      p1: draftLine[0],
+      p2: draftLine[1],
+      allowed_sign: lineAllowedSign,
+      role: "uturn",
+    };
+    try {
+      await api.saveCameraLine(cameraId, payload);
+      setExistingLines((v) => [...v.filter((l) => l.id !== lid), payload]);
+      setDraftLine([]);
+      setSyncStatus(`✓ Đã ghi trực tiếp vạch quay đầu ${lid} vào active.yaml!`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+      if (cfg?.uturn_pairs) setExistingPairs(cfg.uturn_pairs);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -728,6 +849,76 @@ export function CalibratePage() {
       setExistingLines((v) => v.filter((ln) => ln.id !== id));
       const cfg = await api.cameraConfig(cameraId);
       if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+      if (cfg?.uturn_pairs) setExistingPairs(cfg.uturn_pairs);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function handleFlipLine(lineId: string) {
+    setError("");
+    setSyncStatus("");
+    try {
+      await api.flipCameraLine(cameraId, lineId);
+      setExistingLines((lines) =>
+        lines.map((ln) =>
+          ln.id === lineId ? { ...ln, allowed_sign: -(ln.allowed_sign ?? 1) } : ln
+        )
+      );
+      setSyncStatus(`✓ Đã đảo chiều vạch ${lineId}`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function handleAutoGeneratePairs() {
+    setError("");
+    setSyncStatus("");
+    try {
+      const res = await api.autoGenerateUturnPairs(cameraId);
+      if (res?.pairs) setExistingPairs(res.pairs);
+      setSyncStatus(`✓ Đã tự động sinh ${res?.pairs?.length || 0} cặp quay đầu!`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function handleAddManualPair() {
+    if (!firstPairLine || !secondPairLine) {
+      setError("Vui lòng chọn cả vạch vào và vạch ra");
+      return;
+    }
+    if (firstPairLine === secondPairLine) {
+      setError("Vạch vào và vạch ra không được trùng nhau");
+      return;
+    }
+    setError("");
+    setSyncStatus("");
+    try {
+      const res = await api.saveUturnPair(cameraId, { first: firstPairLine, second: secondPairLine });
+      if (res?.pairs) setExistingPairs(res.pairs);
+      setSyncStatus(`✓ Đã thêm cặp quay đầu: ${firstPairLine} → ${secondPairLine}`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function handleDeletePair(first: string, second: string) {
+    if (!window.confirm(`Xác nhận xóa cặp quay đầu ${first} → ${second}?`)) return;
+    setError("");
+    setSyncStatus("");
+    try {
+      const res = await api.deleteUturnPair(cameraId, first, second);
+      if (res?.pairs) setExistingPairs(res.pairs);
+      setSyncStatus(`✓ Đã xóa cặp quay đầu: ${first} → ${second}`);
+      const cfg = await api.cameraConfig(cameraId);
+      if (cfg?.raw_yaml) setRawYaml(cfg.raw_yaml);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -777,11 +968,26 @@ export function CalibratePage() {
       rule_type: z.rule_type,
       polygon: z.polygon,
       arrow: z.arrow,
-      dwell_s: z.dwell_s,
-      min_persons: z.min_persons,
+      dwell_s:
+        z.rule_type === "no_entry_road" || z.rule_type === "no_parking" || z.rule_type === "no_gathering"
+          ? z.dwell_s
+          : undefined,
+      min_persons: z.rule_type === "no_gathering" ? z.min_persons : undefined,
       speed_limit_kmh: z.speed_limit_kmh,
       enabled: true,
     }));
+
+    const allLinesToSave = [
+      ...existingLines,
+      ...stopLines.map((s) => ({
+        id: s.id,
+        p1: s.p1,
+        p2: s.p2,
+        role: "stop",
+        allowed_sign: s.allowed_sign ?? 1,
+        signal_id: s.signal_id || (existingSignals.length > 0 ? existingSignals[0].id : "SIGNAL_1"),
+      })),
+    ];
 
     const payload: CalibrationRequest = {
       rectangle:
@@ -789,8 +995,15 @@ export function CalibratePage() {
           ? { image_points: rectPts, width_m: widthM, length_m: lengthM }
           : undefined,
       stop_line: stopPts.length === 2 ? stopPts : undefined,
+      clearance_zone: clearancePts.length >= 3 ? clearancePts : (clearancePts.length === 0 ? [] : undefined),
       light_box: lightBox,
-      lines: existingLines,
+      lines: allLinesToSave,
+      signals: existingSignals.map((s) => ({
+        id: s.id,
+        roi: s.roi,
+        box: s.roi,
+        ttl_s: 1.0,
+      })),
       rule_zones: ruleZones.filter((z) => z.rule_type !== "wrong_way"),
     };
 
@@ -819,13 +1032,17 @@ export function CalibratePage() {
       return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
     }
     if (key === "red_light") {
-      const hasStop = stopPts.length === 2;
-      const hasLight = lightPts.length === 2;
+      const hasStop = stopLines.length > 0 || stopPts.length === 2;
+      const hasLight = existingSignals.length > 0 || lightPts.length === 2;
+      const hasClearance = clearancePts.length >= 3;
+      if (hasStop && hasLight && hasClearance) {
+        return { text: `✓ ${stopLines.length || 1} Vạch, ${existingSignals.length || 1} Đèn & Giao lộ`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+      }
       if (hasStop && hasLight) {
-        return { text: "✓ Vạch dừng & Đèn", color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
+        return { text: `✓ ${stopLines.length || 1} Vạch dừng & ${existingSignals.length || 1} Đèn`, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" };
       }
       if (hasStop) {
-        return { text: "✓ Vạch dừng", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
+        return { text: `✓ ${stopLines.length || 1} Vạch dừng`, color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" };
       }
       return { text: "Chưa cấu hình", color: "var(--muted)", bg: "var(--surface-raised)" };
     }
@@ -1248,40 +1465,72 @@ export function CalibratePage() {
                   )}
 
                   {/* 2. Saved Stop Lines (Cac vach dung da luu theo tung lan) */}
-                  {stopLines.map((ln) => (
-                    <g key={`stop-line-${ln.id}`}>
-                      <line
-                        x1={ln.p1[0]}
-                        y1={ln.p1[1]}
-                        x2={ln.p2[0]}
-                        y2={ln.p2[1]}
-                        stroke="#f59e0b"
-                        strokeWidth={4}
-                      />
-                      <text
-                        x={(ln.p1[0] + ln.p2[0]) / 2}
-                        y={(ln.p1[1] + ln.p2[1]) / 2 - 8}
-                        fill="#f59e0b"
-                        fontSize={13}
-                        fontWeight={700}
-                        textAnchor="middle"
-                      >
-                        {ln.id}
-                      </text>
-                    </g>
-                  ))}
+                  {stopLines.map((ln) => {
+                    const sign = ln.allowed_sign ?? 1;
+                    const arr = computeAllowedVec(ln.p1, ln.p2, sign, 45);
+                    const sigLabel = ln.signal_id ? ` [${ln.signal_id}]` : "";
+                    return (
+                      <g key={`stop-line-${ln.id}`}>
+                        <line
+                          x1={ln.p1[0]}
+                          y1={ln.p1[1]}
+                          x2={ln.p2[0]}
+                          y2={ln.p2[1]}
+                          stroke="#f59e0b"
+                          strokeWidth={4}
+                        />
+                        {arr && (
+                          <line
+                            x1={arr.start[0]}
+                            y1={arr.start[1]}
+                            x2={arr.end[0]}
+                            y2={arr.end[1]}
+                            stroke="#facc15"
+                            strokeWidth={3}
+                            markerEnd="url(#arrow-yellow)"
+                          />
+                        )}
+                        <text
+                          x={(ln.p1[0] + ln.p2[0]) / 2}
+                          y={(ln.p1[1] + ln.p2[1]) / 2 - 8}
+                          fill="#f59e0b"
+                          fontSize={13}
+                          fontWeight={700}
+                          textAnchor="middle"
+                        >
+                          {`${ln.id}${sigLabel}`}
+                        </text>
+                      </g>
+                    );
+                  })}
 
                   {/* 2.2. Draft Stop Line */}
-                  {stopPts.length === 2 && (
-                    <line
-                      x1={stopPts[0][0]}
-                      y1={stopPts[0][1]}
-                      x2={stopPts[1][0]}
-                      y2={stopPts[1][1]}
-                      stroke="#f59e0b"
-                      strokeWidth={4}
-                    />
-                  )}
+                  {stopPts.length === 2 && (() => {
+                    const arr = computeAllowedVec(stopPts[0], stopPts[1], stopAllowedSign, 45);
+                    return (
+                      <g>
+                        <line
+                          x1={stopPts[0][0]}
+                          y1={stopPts[0][1]}
+                          x2={stopPts[1][0]}
+                          y2={stopPts[1][1]}
+                          stroke="#f59e0b"
+                          strokeWidth={4}
+                        />
+                        {arr && (
+                          <line
+                            x1={arr.start[0]}
+                            y1={arr.start[1]}
+                            x2={arr.end[0]}
+                            y2={arr.end[1]}
+                            stroke="#facc15"
+                            strokeWidth={3}
+                            markerEnd="url(#arrow-yellow)"
+                          />
+                        )}
+                      </g>
+                    );
+                  })()}
                   {stopPts.map((p, i) => (
                     <circle key={`stop-pt-${i}`} cx={p[0]} cy={p[1]} r={7} fill="#f59e0b" stroke="#fff" strokeWidth={2} />
                   ))}
@@ -1314,6 +1563,31 @@ export function CalibratePage() {
                     );
                   })}
 
+                  {/* 2.4b. Clearance Zone (Vùng Giao lộ) */}
+                  {clearancePts.length >= 3 && (
+                    <g key="clearance-zone-poly">
+                      <polygon
+                        points={clearancePts.map((p) => p.join(",")).join(" ")}
+                        fill="rgba(168, 85, 247, 0.18)"
+                        stroke="#a855f7"
+                        strokeWidth={2.5}
+                        strokeDasharray={drawSubMode === "clearance" ? "6 3" : undefined}
+                      />
+                      <text
+                        x={clearancePts[0][0] + 6}
+                        y={clearancePts[0][1] - 6}
+                        fill="#a855f7"
+                        fontSize={15}
+                        fontWeight={700}
+                      >
+                        VÙNG GIAO LỘ (CLEARANCE)
+                      </text>
+                    </g>
+                  )}
+                  {drawSubMode === "clearance" && clearancePts.map((p, i) => (
+                    <circle key={`clearance-pt-${i}`} cx={p[0]} cy={p[1]} r={6} fill="#a855f7" stroke="#fff" strokeWidth={2} />
+                  ))}
+
                   {/* 2.4. Draft Signal Box */}
                   {lightPts.length === 2 && (
                     <rect
@@ -1334,11 +1608,14 @@ export function CalibratePage() {
                   {/* 2.5. Existing Lines with Yellow Arrow allowed_vec exactly like draw_lines.py */}
                   {existingLines.map((ln) => {
                     const isDivider = ln.role === "divider";
-                    const col = isDivider ? "#3b82f6" : "#22c55e";
+                    const isUturn = ln.role === "uturn" || ln.id?.toUpperCase().includes("UTURN");
+                    const col = isDivider ? "#3b82f6" : (isUturn ? "#a855f7" : "#22c55e");
                     const sign = ln.allowed_sign ?? 1;
                     const tag = isDivider
                       ? `${ln.id} [med]`
-                      : `${ln.id} ${sign >= 0 ? "+1" : "-1"}${ln.signal_id ? ` [${ln.signal_id}]` : ""}`;
+                      : (isUturn
+                        ? `${ln.id} [uturn]`
+                        : `${ln.id} ${sign >= 0 ? "+1" : "-1"}${ln.signal_id ? ` [${ln.signal_id}]` : ""}`);
                     const arr = !isDivider ? computeAllowedVec(ln.p1, ln.p2, sign, 50) : null;
                     return (
                       <g key={`existing-line-${ln.id}`}>
@@ -1369,6 +1646,52 @@ export function CalibratePage() {
                           fontWeight={700}
                         >
                           {tag}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* 2.55. U-Turn Pairs Arc Curves (Hien thi truc quan luong quay dau cam) */}
+                  {existingPairs.map((pr: any, idx: number) => {
+                    const ln1 = existingLines.find((l) => l.id === pr.first);
+                    const ln2 = existingLines.find((l) => l.id === pr.second);
+                    if (!ln1 || !ln2) return null;
+                    const m1 = [(ln1.p1[0] + ln1.p2[0]) / 2, (ln1.p1[1] + ln1.p2[1]) / 2];
+                    const m2 = [(ln2.p1[0] + ln2.p2[0]) / 2, (ln2.p1[1] + ln2.p2[1]) / 2];
+                    const dx = m2[0] - m1[0];
+                    const dy = m2[1] - m1[1];
+                    const cx = (m1[0] + m2[0]) / 2 - dy * 0.25;
+                    const cy = (m1[1] + m2[1]) / 2 + dx * 0.25;
+                    return (
+                      <g key={`pair-arc-${idx}`}>
+                        <path
+                          d={`M ${m1[0]} ${m1[1]} Q ${cx} ${cy} ${m2[0]} ${m2[1]}`}
+                          fill="none"
+                          stroke="#d946ef"
+                          strokeWidth={2.5}
+                          strokeDasharray="6 4"
+                          markerEnd="url(#arrow-magenta)"
+                        />
+                        <rect
+                          x={cx - 45}
+                          y={cy - 10}
+                          width={90}
+                          height={20}
+                          rx={10}
+                          fill="rgba(15, 23, 42, 0.85)"
+                          stroke="#d946ef"
+                          strokeWidth={1.5}
+                        />
+                        <text
+                          x={cx}
+                          y={cy + 4}
+                          fill="#d946ef"
+                          fontSize={10.5}
+                          fontWeight={700}
+                          fontFamily="monospace"
+                          textAnchor="middle"
+                        >
+                          {pr.first} &rarr; {pr.second}
                         </text>
                       </g>
                     );
@@ -1851,19 +2174,75 @@ export function CalibratePage() {
                         className={`calib-submode-btn ${drawSubMode === "light" ? "active" : ""}`}
                         onClick={() => setDrawSubMode("light")}
                       >
-                        2. Hộp Đèn tín hiệu ({lightPts.length}/2)
+                        2. Hộp Đèn ({lightPts.length}/2)
+                      </button>
+                      <button
+                        type="button"
+                        className={`calib-submode-btn ${drawSubMode === "clearance" ? "active" : ""}`}
+                        onClick={() => setDrawSubMode("clearance")}
+                        style={drawSubMode === "clearance" ? { borderColor: "#a855f7", color: "#a855f7" } : {}}
+                      >
+                        3. Giao lộ ({clearancePts.length}đ)
                       </button>
                     </div>
                     <div style={{ fontSize: "11px", color: "var(--muted)" }}>
                       {drawSubMode === "stop"
                         ? "Chấm 2 điểm trên hình để tạo Vạch dừng Stop Line."
-                        : "Chấm 2 góc đối diện (góc trên-trái và góc dưới-phải) để khoanh hộp Đèn tín hiệu."}
+                        : drawSubMode === "light"
+                        ? "Chấm 2 góc đối diện (góc trên-trái và góc dưới-phải) để khoanh hộp Đèn tín hiệu."
+                        : "Chấm các điểm (tối thiểu 3 điểm) để vẽ Vùng giao lộ (Clearance Zone) màu tím."}
                     </div>
 
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--muted)" }}>
-                      <span>Vạch dừng: <b>{stopPts.length}/2</b></span>
-                      <span>Hộp đèn: <b>{lightPts.length}/2</b></span>
+                      <span>Vạch: <b>{stopPts.length}/2</b></span>
+                      <span>Đèn: <b>{lightPts.length}/2</b></span>
+                      <span>Giao lộ: <b style={{ color: clearancePts.length >= 3 ? "#a855f7" : "inherit" }}>{clearancePts.length}đ</b></span>
                     </div>
+
+                    {drawSubMode === "clearance" && (
+                      <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
+                        <button
+                          type="button"
+                          className="button button-primary"
+                          disabled={clearancePts.length < 3}
+                          onClick={saveClearanceZone}
+                          style={{
+                            background: "#a855f7",
+                            borderColor: "#a855f7",
+                            color: "#fff",
+                            fontWeight: 700,
+                            padding: "6px 8px",
+                            fontSize: "11.5px",
+                            flex: 1,
+                          }}
+                        >
+                          + Ghi Vùng Giao Lộ ({clearancePts.length}đ)
+                        </button>
+                        {clearancePts.length > 0 && (
+                          <button
+                            type="button"
+                            className="button button-secondary"
+                            onClick={removeClearanceZone}
+                            style={{ color: "var(--rose)", padding: "6px 8px", fontSize: "11.5px" }}
+                          >
+                            Xóa vùng
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {drawSubMode === "stop" && (
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "2px" }}>
+                        <button
+                          type="button"
+                          className="button"
+                          style={{ fontSize: "11px", padding: "4px 8px", background: "var(--surface-raised)", cursor: "pointer" }}
+                          onClick={() => setStopAllowedSign((s) => (s > 0 ? -1 : 1))}
+                        >
+                          Đảo hướng vượt: <b style={{ color: "#facc15" }}>{stopAllowedSign > 0 ? "+1 (Thuận)" : "-1 (Nghịch)"}</b>
+                        </button>
+                      </div>
+                    )}
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "2px" }}>
                       {drawSubMode === "stop" ? (
@@ -1903,7 +2282,7 @@ export function CalibratePage() {
                           {stopLines.map((ln) => (
                             <li key={ln.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <span style={{ fontSize: "11.5px", fontFamily: "monospace", color: "var(--amber)", fontWeight: 700 }}>
-                                {ln.id}
+                                {ln.id} {ln.signal_id ? `[${ln.signal_id}]` : ""} (hướng: {(ln.allowed_sign ?? 1) > 0 ? "+1" : "-1"})
                               </span>
                               <button
                                 type="button"
@@ -2064,8 +2443,335 @@ export function CalibratePage() {
                   </div>
                 )}
 
-                {(m.key === "no_uturn" ||
-                  m.key === "no_entry_road" ||
+                {m.key === "no_uturn" && (
+                  <div className="calib-fields">
+                    <div style={{ display: "flex", gap: "4px", marginBottom: "8px" }}>
+                      <button
+                        type="button"
+                        className={`calib-submode-btn ${drawSubMode === "poly" ? "active" : ""}`}
+                        onClick={() => {
+                          setDrawSubMode("poly");
+                          setDraftLine([]);
+                        }}
+                        style={{ flex: 1, padding: "5px 3px", fontSize: "10.5px" }}
+                      >
+                        1. Đa giác
+                      </button>
+                      <button
+                        type="button"
+                        className={`calib-submode-btn ${drawSubMode === "lines" ? "active" : ""}`}
+                        onClick={() => {
+                          setDrawSubMode("lines");
+                          setDraftPoly([]);
+                        }}
+                        style={{ flex: 1, padding: "5px 3px", fontSize: "10.5px" }}
+                      >
+                        2. Vạch ({existingLines.filter((ln) => ln.role === "uturn" || ln.id?.toUpperCase().includes("UTURN")).length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`calib-submode-btn ${drawSubMode === "pairs" ? "active" : ""}`}
+                        onClick={() => {
+                          setDrawSubMode("pairs");
+                          setDraftPoly([]);
+                          setDraftLine([]);
+                        }}
+                        style={{ flex: 1, padding: "5px 3px", fontSize: "10.5px" }}
+                      >
+                        3. Cặp quay đầu ({existingPairs.length})
+                      </button>
+                    </div>
+
+                    {drawSubMode === "poly" && (
+                      <div>
+                        <div className="calib-count" style={{ marginBottom: "6px" }}>
+                          {draftPoly.length} điểm đã chấm (Tối thiểu 3 điểm tạo đa giác)
+                        </div>
+                        <button
+                          type="button"
+                          className="button button-primary"
+                          disabled={draftPoly.length < 3}
+                          onClick={commitZone}
+                          style={{ width: "100%", padding: "7px 10px", fontSize: "12px", background: "#f59e0b", borderColor: "#f59e0b" }}
+                        >
+                          + Xác nhận vùng Cấm quay đầu ({draftPoly.length} điểm)
+                        </button>
+                        {customZones.filter((z) => z.rule_type === "no_uturn").length > 0 && (
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                              Vùng cấm quay đầu ({customZones.filter((z) => z.rule_type === "no_uturn").length}):
+                            </div>
+                            <ul className="calib-lane-list" style={{ maxHeight: "100px", overflowY: "auto" }}>
+                              {customZones
+                                .filter((z) => z.rule_type === "no_uturn")
+                                .map((z) => (
+                                  <li key={z.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", background: "var(--surface-sunken)", borderRadius: "4px", marginBottom: "4px" }}>
+                                    <span style={{ fontSize: "11px", fontFamily: "monospace", color: "#f59e0b", fontWeight: 700 }}>
+                                      {z.id} ({z.polygon.length} đỉnh)
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeZone(z.id)}
+                                      title="Xóa vùng"
+                                      style={{ color: "var(--rose)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </li>
+                                ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {drawSubMode === "lines" && (
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11.5px", marginBottom: 6 }}>
+                          <span>Điểm đã chọn: <b>{draftLine.length} / 2 điểm</b></span>
+                        </div>
+                        {draftLine.length === 2 && (
+                          <div style={{ marginBottom: 8, padding: "6px 8px", background: "var(--surface-sunken)", borderRadius: "4px" }}>
+                            <label style={{ fontSize: "11px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                              <span>Chiều cho phép (mũi tên vàng):</span>
+                              <select
+                                value={lineAllowedSign}
+                                onChange={(e) => setLineAllowedSign(Number(e.target.value))}
+                                style={{ padding: "4px 8px", fontSize: "11px", borderRadius: "4px", border: "1px solid var(--line)" }}
+                              >
+                                <option value={1}>+1 (Theo chiều P1 &rarr; P2)</option>
+                                <option value={-1}>-1 (Ngược chiều P1 &rarr; P2)</option>
+                              </select>
+                            </label>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="button button-primary"
+                          disabled={draftLine.length !== 2}
+                          onClick={commitUturnLine}
+                          style={{
+                            width: "100%",
+                            background: "#a855f7",
+                            borderColor: "#a855f7",
+                            color: "#fff",
+                            fontWeight: 700,
+                            padding: "7px 10px",
+                            fontSize: "12px",
+                          }}
+                        >
+                          + Ghi vạch quay đầu vào active.yaml
+                        </button>
+                        {existingLines.filter((ln) => ln.role === "uturn" || ln.id?.toUpperCase().includes("UTURN")).length > 0 && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                              Vạch quay đầu đã cấu hình ({existingLines.filter((ln) => ln.role === "uturn" || ln.id?.toUpperCase().includes("UTURN")).length}):
+                            </div>
+                            <ul className="calib-lane-list" style={{ maxHeight: "120px", overflowY: "auto" }}>
+                              {existingLines
+                                .filter((ln) => ln.role === "uturn" || ln.id?.toUpperCase().includes("UTURN"))
+                                .map((ln) => (
+                                  <li
+                                    key={ln.id}
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      padding: "4px 8px",
+                                      background: "var(--surface-sunken)",
+                                      borderRadius: "4px",
+                                      marginBottom: "4px",
+                                    }}
+                                  >
+                                    <span style={{ fontSize: "11.5px", fontFamily: "monospace", display: "flex", alignItems: "center", gap: "6px" }}>
+                                      <span style={{ color: "#a855f7", fontWeight: 700 }}>{ln.id}</span>
+                                      <span style={{ color: "#facc15", fontSize: "10.5px" }}>
+                                        [sign: {(ln.allowed_sign ?? 1) > 0 ? "+1" : "-1"}]
+                                      </span>
+                                    </span>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleFlipLine(ln.id)}
+                                        title={`Đảo chiều mũi tên vạch ${ln.id} (như phím f)`}
+                                        style={{
+                                          color: "#38bdf8",
+                                          background: "rgba(56, 189, 248, 0.15)",
+                                          border: "1px solid rgba(56, 189, 248, 0.3)",
+                                          borderRadius: "3px",
+                                          cursor: "pointer",
+                                          padding: "2px 6px",
+                                          fontSize: "10.5px",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "3px",
+                                        }}
+                                      >
+                                        <ArrowLeftRight size={11} /> Đổi chiều
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeLine(ln.id)}
+                                        title={`Xóa vạch ${ln.id}`}
+                                        style={{
+                                          color: "var(--rose)",
+                                          background: "transparent",
+                                          border: "none",
+                                          cursor: "pointer",
+                                          padding: "2px",
+                                        }}
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  </li>
+                                ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {drawSubMode === "pairs" && (
+                      <div>
+                        {/* Auto Generate Button */}
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          onClick={handleAutoGeneratePairs}
+                          style={{
+                            width: "100%",
+                            marginBottom: "8px",
+                            padding: "6px 8px",
+                            fontSize: "11.5px",
+                            borderColor: "#a855f7",
+                            color: "#a855f7",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "5px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Repeat size={13} />
+                          ⚡ Tự động sinh cặp quay đầu (Auto A ⇄ B)
+                        </button>
+
+                        {/* Manual Pair Selection */}
+                        <div style={{ padding: "8px", background: "var(--surface-sunken)", borderRadius: "4px", marginBottom: "8px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", marginBottom: "6px" }}>
+                            + Thêm cặp quay đầu thủ công (First &rarr; Second):
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                            <label style={{ fontSize: "11px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span>Vạch vào (First):</span>
+                              <select
+                                value={firstPairLine}
+                                onChange={(e) => setFirstPairLine(e.target.value)}
+                                style={{ padding: "3px 6px", fontSize: "11px", borderRadius: "4px", border: "1px solid var(--line)", width: "140px" }}
+                              >
+                                <option value="">-- Chọn vạch --</option>
+                                {existingLines
+                                  .filter((ln) => ln.role === "uturn" || ln.id?.toUpperCase().includes("UTURN"))
+                                  .map((ln) => (
+                                    <option key={`p-first-${ln.id}`} value={ln.id}>
+                                      {ln.id} (sign: {(ln.allowed_sign ?? 1) > 0 ? "+1" : "-1"})
+                                    </option>
+                                  ))}
+                              </select>
+                            </label>
+                            <label style={{ fontSize: "11px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span>Vạch ra (Second):</span>
+                              <select
+                                value={secondPairLine}
+                                onChange={(e) => setSecondPairLine(e.target.value)}
+                                style={{ padding: "3px 6px", fontSize: "11px", borderRadius: "4px", border: "1px solid var(--line)", width: "140px" }}
+                              >
+                                <option value="">-- Chọn vạch --</option>
+                                {existingLines
+                                  .filter((ln) => ln.role === "uturn" || ln.id?.toUpperCase().includes("UTURN"))
+                                  .map((ln) => (
+                                    <option key={`p-sec-${ln.id}`} value={ln.id}>
+                                      {ln.id} (sign: {(ln.allowed_sign ?? 1) > 0 ? "+1" : "-1"})
+                                    </option>
+                                  ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              className="button button-primary"
+                              disabled={!firstPairLine || !secondPairLine || firstPairLine === secondPairLine}
+                              onClick={handleAddManualPair}
+                              style={{
+                                width: "100%",
+                                marginTop: "4px",
+                                padding: "5px 8px",
+                                fontSize: "11.5px",
+                                background: "#a855f7",
+                                borderColor: "#a855f7",
+                                color: "#fff",
+                                fontWeight: 600,
+                              }}
+                            >
+                              + Thêm cặp quay đầu
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Existing Pairs List */}
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>
+                            Danh sách cặp cấm quay đầu ({existingPairs.length}):
+                          </div>
+                          {existingPairs.length === 0 ? (
+                            <div style={{ fontSize: "11px", color: "var(--muted)", fontStyle: "italic", padding: "6px" }}>
+                              Chưa có cặp quay đầu nào. Vui lòng bấm "Tự động sinh" hoặc chọn vạch vào/ra để thêm.
+                            </div>
+                          ) : (
+                            <ul className="calib-lane-list" style={{ maxHeight: "120px", overflowY: "auto" }}>
+                              {existingPairs.map((pr: any, i: number) => (
+                                <li
+                                  key={`pair-row-${i}`}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "4px 8px",
+                                    background: "var(--surface-sunken)",
+                                    borderRadius: "4px",
+                                    marginBottom: "4px",
+                                  }}
+                                >
+                                  <span style={{ fontSize: "11px", fontFamily: "monospace", display: "flex", alignItems: "center", gap: "6px" }}>
+                                    <span style={{ color: "#d946ef", fontWeight: 700 }}>pair{i}:</span>
+                                    <span style={{ color: "var(--text)" }}>{pr.first} &rarr; {pr.second}</span>
+                                    {pr.medial && <span style={{ color: "#3b82f6", fontSize: "10px" }}>[med: {pr.medial}]</span>}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeletePair(pr.first, pr.second)}
+                                    title={`Xóa cặp ${pr.first} -> ${pr.second}`}
+                                    style={{
+                                      color: "var(--rose)",
+                                      background: "transparent",
+                                      border: "none",
+                                      cursor: "pointer",
+                                      padding: "2px",
+                                    }}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(m.key === "no_entry_road" ||
                   m.key === "no_parking" ||
                   m.key === "no_gathering") && (
                   <div className="calib-fields">

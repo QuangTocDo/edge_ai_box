@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-
 import json
 import math
 import shutil
@@ -13,7 +12,7 @@ from uuid import uuid4
 import cv2
 import numpy as np
 import yaml
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -227,6 +226,7 @@ def get_camera_config(camera_id: str, db: Session = Depends(get_db)):
             "polygons": [],
             "lines": [],
             "signals": [],
+            "uturn_pairs": [],
         }
     with open(config_path, "r", encoding="utf-8") as f:
         raw_text = f.read()
@@ -239,11 +239,26 @@ def get_camera_config(camera_id: str, db: Session = Depends(get_db)):
         "polygons": cfg.get("polygons", []),
         "lines": cfg.get("lines", []),
         "signals": cfg.get("signals", []),
+        "uturn_pairs": [
+            pr for i, pr in enumerate(
+                list(cfg.get("uturn_pairs", [])) + [
+                    pr for p in cfg.get("polygons", []) if isinstance(p, dict)
+                    for pr in p.get("uturn_pairs", []) if isinstance(pr, dict)
+                ]
+            ) if pr not in (list(cfg.get("uturn_pairs", [])) + [
+                pr for p in cfg.get("polygons", []) if isinstance(p, dict)
+                for pr in p.get("uturn_pairs", []) if isinstance(pr, dict)
+            ])[:i]
+        ],
         "no_entry_road": cfg.get("no_entry_road", {}),
         "no_gathering": cfg.get("no_gathering", {}),
         "no_parking": cfg.get("no_parking", {}),
         "no_uturn": cfg.get("no_uturn", {}),
         "wrong_way": cfg.get("wrong_way", {}),
+        "red_light": cfg.get("red_light", {}) or cfg.get("red_light_running", {}),
+        "stop_line": cfg.get("stop_line", {}) or cfg.get("stop_line_violation", {}),
+        "red_light_running": cfg.get("red_light_running", {}) or cfg.get("red_light", {}),
+        "stop_line_violation": cfg.get("stop_line_violation", {}) or cfg.get("stop_line", {}),
     }
 
 
@@ -323,43 +338,70 @@ def save_camera_polygon(camera_id: str, poly: dict = Body(...), db: Session = De
 
     polygons = cfg.setdefault("polygons", [])
     pid = poly.get("id")
-    if "homography" in poly and poly["homography"].get("src") and poly["homography"].get("dst"):
-        from src.utils.homography import build_H, pixel_to_road
-        src = poly["homography"]["src"]
-        dst = poly["homography"]["dst"]
-        try:
-            H_mat, inliers, reproj_err = build_H(src, dst)
-            r_pts = poly.get("road_dir_points")
-            if r_pts and len(r_pts) == 2:
-                xa, ya = pixel_to_road(H_mat, r_pts[0][0], r_pts[0][1])
-                xb, yb = pixel_to_road(H_mat, r_pts[1][0], r_pts[1][1])
-                dx = xb - xa
-                dy = yb - ya
-                mag = math.hypot(dx, dy)
-                poly["road_dir"] = [float(dx / mag), float(dy / mag)] if mag > 1e-9 else [0.0, 1.0]
-            elif not poly.get("road_dir"):
-                poly["road_dir"] = [0.0, 1.0]
-        except Exception:
-            if not poly.get("road_dir"):
-                poly["road_dir"] = [0.0, 1.0]
-    elif (poly.get("homography") or poly.get("rules", {}).get("speeding", {}).get("enable")) and not poly.get("road_dir"):
-        poly["road_dir"] = [0.0, 1.0]
+
+    p_rules = poly.get("rules", {})
+    is_speed_rule = bool(poly.get("homography") or p_rules.get("speeding", {}).get("enable"))
+    if not is_speed_rule:
+        poly.pop("homography", None)
+        poly.pop("road_dir", None)
+        poly.pop("road_dir_points", None)
+        if "rules" in poly:
+            poly["rules"].pop("speeding", None)
+    else:
+        if "homography" in poly and poly["homography"].get("src") and poly["homography"].get("dst"):
+            from src.utils.homography import build_H, pixel_to_road
+            src = poly["homography"]["src"]
+            dst = poly["homography"]["dst"]
+            try:
+                H_mat, inliers, reproj_err = build_H(src, dst)
+                r_pts = poly.get("road_dir_points")
+                if r_pts and len(r_pts) == 2:
+                    xa, ya = pixel_to_road(H_mat, r_pts[0][0], r_pts[0][1])
+                    xb, yb = pixel_to_road(H_mat, r_pts[1][0], r_pts[1][1])
+                    dx = xb - xa
+                    dy = yb - ya
+                    mag = math.hypot(dx, dy)
+                    poly["road_dir"] = [float(dx / mag), float(dy / mag)] if mag > 1e-9 else [0.0, 1.0]
+                elif not poly.get("road_dir"):
+                    poly["road_dir"] = [0.0, 1.0]
+            except Exception:
+                if not poly.get("road_dir"):
+                    poly["road_dir"] = [0.0, 1.0]
+        elif not poly.get("road_dir"):
+            poly["road_dir"] = [0.0, 1.0]
+
     if not pid:
         used = {p.get("id") for p in polygons if isinstance(p, dict)}
-        prefix = "SPEED" if (poly.get("homography") or poly.get("rules", {}).get("speeding")) else "POLY"
+        if p_rules.get("no_uturn", {}).get("enable"):
+            prefix = "ZONE_NO_UTURN"
+        elif p_rules.get("no_entry_road", {}).get("enable"):
+            prefix = "ZONE_NO_ENTRY"
+        elif p_rules.get("no_parking", {}).get("enable"):
+            prefix = "ZONE_NO_PARKING"
+        elif p_rules.get("no_gathering", {}).get("enable"):
+            prefix = "ZONE_NO_GATHERING"
+        elif is_speed_rule:
+            prefix = "SPEED"
+        else:
+            prefix = "ZONE"
         idx = 1
         while f"{prefix}_{idx}" in used:
             idx += 1
         pid = f"{prefix}_{idx}"
         poly["id"] = pid
 
-
+    if p_rules.get("no_uturn", {}).get("enable"):
+        poly["kind"] = "directional"
+        poly.setdefault("lines", [])
+        u_lines = [l for l in cfg.get("lines", []) if isinstance(l, dict) and (l.get("role") == "uturn" or "UTURN" in str(l.get("id", "")).upper())]
+        if len(u_lines) >= 2 and not poly.get("uturn_pairs"):
+            a, b = u_lines[0]["id"], u_lines[1]["id"]
+            poly["uturn_pairs"] = [{"first": a, "second": b}, {"first": b, "second": a}]
 
     existing = next((p for p in polygons if isinstance(p, dict) and p.get("id") == pid), None)
     if existing:
         idx = polygons.index(existing)
-        # merge to preserve homography if not supplied
-        if "homography" in existing and "homography" not in poly:
+        if is_speed_rule and "homography" in existing and "homography" not in poly:
             poly["homography"] = existing["homography"]
         polygons[idx] = poly
     else:
@@ -393,10 +435,34 @@ def save_camera_line(camera_id: str, line: dict = Body(...), db: Session = Depen
     if not lid:
         used = {l.get("id") for l in lines if isinstance(l, dict)}
         idx = 1
-        while f"L{idx}" in used:
+        prefix = "UTURN_L" if line.get("role") == "uturn" else "L"
+        while f"{prefix}{idx}" in used:
             idx += 1
-        lid = f"L{idx}"
+        lid = f"{prefix}{idx}"
         line["id"] = lid
+
+    is_stop = (
+        line.get("role") == "stop"
+        or "STOP" in str(lid).upper()
+        or bool(line.get("signal_id"))
+    )
+    if is_stop:
+        line["role"] = "stop"
+        if not line.get("signal_id"):
+            sigs = cfg.get("signals", [])
+            if sigs:
+                line["signal_id"] = sigs[0].get("id", "SIGNAL_1")
+        if "allowed_sign" not in line:
+            line["allowed_sign"] = 1
+
+    is_uturn = (
+        line.get("role") == "uturn"
+        or "UTURN" in str(lid).upper()
+    )
+    if is_uturn:
+        line["role"] = "uturn"
+        if "allowed_sign" not in line:
+            line["allowed_sign"] = 1
 
     existing = next((l for l in lines if isinstance(l, dict) and l.get("id") == lid), None)
     if existing:
@@ -406,8 +472,27 @@ def save_camera_line(camera_id: str, line: dict = Body(...), db: Session = Depen
         lines.append(line)
 
     cfg["lines"] = lines
+    if is_stop:
+        cfg.setdefault("red_light", {})["enable"] = True
+        cfg.setdefault("stop_line", {})["enable"] = True
+        cfg.setdefault("red_light_running", {})["enable"] = True
+        cfg.setdefault("stop_line_violation", {})["enable"] = True
     if any(isinstance(l, dict) and l.get("allowed_sign") is not None for l in lines):
         cfg.setdefault("wrong_way", {})["enable"] = True
+    if is_uturn or any(isinstance(l, dict) and (l.get("role") == "uturn" or "UTURN" in str(l.get("id", "")).upper()) for l in lines):
+        cfg.setdefault("no_uturn", {})["enable"] = True
+        u_lines = [l for l in lines if isinstance(l, dict) and (l.get("role") == "uturn" or "UTURN" in str(l.get("id", "")).upper())]
+        if len(u_lines) >= 2:
+            pairs = cfg.setdefault("uturn_pairs", [])
+            a, b = u_lines[0]["id"], u_lines[1]["id"]
+            if not any(isinstance(p, dict) and p.get("first") == a and p.get("second") == b for p in pairs):
+                pairs.append({"first": a, "second": b})
+            if not any(isinstance(p, dict) and p.get("first") == b and p.get("second") == a for p in pairs):
+                pairs.append({"first": b, "second": a})
+            for p in cfg.get("polygons", []):
+                if isinstance(p, dict) and p.get("rules", {}).get("no_uturn", {}).get("enable"):
+                    p["uturn_pairs"] = [{"first": a, "second": b}, {"first": b, "second": a}]
+
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f, default_flow_style=False)
 
@@ -437,6 +522,8 @@ def save_camera_signal(camera_id: str, sig: dict = Body(...), db: Session = Depe
         sig["roi"] = sig["box"]
     elif "roi" in sig and "box" not in sig:
         sig["box"] = sig["roi"]
+    if "ttl_s" not in sig:
+        sig["ttl_s"] = 1.0
 
     existing = next((s for s in signals if isinstance(s, dict) and s.get("id") == sid), None)
     if existing:
@@ -446,6 +533,18 @@ def save_camera_signal(camera_id: str, sig: dict = Body(...), db: Session = Depe
         signals.append(sig)
 
     cfg["signals"] = signals
+
+    # Auto-link stop lines that lack signal_id
+    for ln in cfg.get("lines", []):
+        if isinstance(ln, dict):
+            if (ln.get("role") == "stop" or "STOP" in str(ln.get("id", "")).upper()) and not ln.get("signal_id"):
+                ln["signal_id"] = sid
+
+    cfg.setdefault("red_light", {})["enable"] = True
+    cfg.setdefault("stop_line", {})["enable"] = True
+    cfg.setdefault("red_light_running", {})["enable"] = True
+    cfg.setdefault("stop_line_violation", {})["enable"] = True
+
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f, default_flow_style=False)
 
@@ -504,6 +603,15 @@ def delete_camera_line(camera_id: str, line_id: str, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail=f"Khong tim thay vach ke {line_id}")
 
     cfg["lines"] = lines
+    if "uturn_pairs" in cfg:
+        cfg["uturn_pairs"] = [pr for pr in cfg["uturn_pairs"] if isinstance(pr, dict) and pr.get("first") != line_id and pr.get("second") != line_id]
+    for p in cfg.get("polygons", []):
+        if isinstance(p, dict):
+            if "lines" in p:
+                p["lines"] = [ln for ln in p["lines"] if ln.get("id") != line_id]
+            if "uturn_pairs" in p:
+                p["uturn_pairs"] = [pr for pr in p["uturn_pairs"] if isinstance(pr, dict) and pr.get("first") != line_id and pr.get("second") != line_id]
+
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f, default_flow_style=False)
 
@@ -513,6 +621,154 @@ def delete_camera_line(camera_id: str, line_id: str, db: Session = Depends(get_d
             registry.start(camera)
 
     return {"status": "ok", "deleted": line_id, "remaining_lines": len(lines)}
+
+
+@router.post("/{camera_id}/config/lines/{line_id}/flip")
+def flip_camera_line(camera_id: str, line_id: str, db: Session = Depends(get_db)):
+    """Dao chieu allowed_sign (+1 <-> -1) cua vach ke (tuong tu phim f trong draw_lines.py)."""
+    camera = require_camera(camera_id, db)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+
+    found = None
+    for ln in cfg.get("lines", []):
+        if isinstance(ln, dict) and ln.get("id") == line_id:
+            sign = ln.get("allowed_sign", 1)
+            ln["allowed_sign"] = -sign
+            found = ln
+            break
+
+    for p in cfg.get("polygons", []):
+        if isinstance(p, dict):
+            for ln in p.get("lines", []):
+                if isinstance(ln, dict) and ln.get("id") == line_id:
+                    sign = ln.get("allowed_sign", 1)
+                    ln["allowed_sign"] = -sign
+                    found = ln
+                    break
+
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Khong tim thay vach ke {line_id}")
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f, default_flow_style=False)
+
+    if registry.get(camera_id) is not None:
+        registry.stop(camera_id)
+        if camera.enabled:
+            registry.start(camera)
+
+    return {"status": "ok", "message": f"Da dao chieu vach {line_id}", "line": found}
+
+
+@router.post("/{camera_id}/config/pairs")
+def add_camera_pair(camera_id: str, pair: dict = Body(...), db: Session = Depends(get_db)):
+    """Them cap quay dau first -> second (tuong tu phim a trong draw_lines.py)."""
+    camera = require_camera(camera_id, db)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
+
+    first = pair.get("first")
+    second = pair.get("second")
+    if not first or not second:
+        raise HTTPException(status_code=400, detail="Cap quay dau can co ca first va second")
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+
+    pairs = cfg.setdefault("uturn_pairs", [])
+    new_pair = {"first": first, "second": second}
+    if not any(isinstance(p, dict) and p.get("first") == first and p.get("second") == second for p in pairs):
+        pairs.append(new_pair)
+
+    for p in cfg.get("polygons", []):
+        if isinstance(p, dict) and p.get("rules", {}).get("no_uturn", {}).get("enable"):
+            p_pairs = p.setdefault("uturn_pairs", [])
+            if not any(isinstance(pr, dict) and pr.get("first") == first and pr.get("second") == second for pr in p_pairs):
+                p_pairs.append(new_pair)
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f, default_flow_style=False)
+
+    if registry.get(camera_id) is not None:
+        registry.stop(camera_id)
+        if camera.enabled:
+            registry.start(camera)
+
+    return {"status": "ok", "message": f"Da them cap quay dau {first} -> {second}", "pairs": pairs}
+
+
+@router.delete("/{camera_id}/config/pairs")
+def delete_camera_pair(camera_id: str, first: str = Query(...), second: str = Query(...), db: Session = Depends(get_db)):
+    """Xoa cap quay dau khoi active.yaml."""
+    camera = require_camera(camera_id, db)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+
+    if "uturn_pairs" in cfg:
+        cfg["uturn_pairs"] = [p for p in cfg["uturn_pairs"] if not (isinstance(p, dict) and p.get("first") == first and p.get("second") == second)]
+
+    for p in cfg.get("polygons", []):
+        if isinstance(p, dict) and "uturn_pairs" in p:
+            p["uturn_pairs"] = [pr for pr in p["uturn_pairs"] if not (isinstance(pr, dict) and pr.get("first") == first and pr.get("second") == second)]
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f, default_flow_style=False)
+
+    if registry.get(camera_id) is not None:
+        registry.stop(camera_id)
+        if camera.enabled:
+            registry.start(camera)
+
+    return {"status": "ok", "message": f"Da xoa cap quay dau {first} -> {second}", "pairs": cfg.get("uturn_pairs", [])}
+
+
+@router.post("/{camera_id}/config/pairs/auto")
+def auto_generate_uturn_pairs(camera_id: str, db: Session = Depends(get_db)):
+    """Tu dong sinh cac cap quay dau dao chieu tu cac vach uturn hien co (nhu finalize_zone)."""
+    camera = require_camera(camera_id, db)
+    config_path = VISION_CONFIG_PATH if VISION_CONFIG_PATH.exists() else Path(camera.config_path)
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail="Khong tim thay tap tin cau hinh")
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+
+    lines = cfg.get("lines", [])
+    u_lines = [l for l in lines if isinstance(l, dict) and (l.get("role") == "uturn" or "UTURN" in str(l.get("id", "")).upper())]
+    if len(u_lines) < 2:
+        raise HTTPException(status_code=400, detail="Can it nhat 2 vach quay dau de tu dong sinh cap")
+
+    pairs = cfg.setdefault("uturn_pairs", [])
+    for i in range(len(u_lines)):
+        for j in range(len(u_lines)):
+            if i != j:
+                a, b = u_lines[i]["id"], u_lines[j]["id"]
+                if not any(isinstance(p, dict) and p.get("first") == a and p.get("second") == b for p in pairs):
+                    pairs.append({"first": a, "second": b})
+
+    for p in cfg.get("polygons", []):
+        if isinstance(p, dict) and p.get("rules", {}).get("no_uturn", {}).get("enable"):
+            p["uturn_pairs"] = list(pairs)
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cfg, f, default_flow_style=False)
+
+    if registry.get(camera_id) is not None:
+        registry.stop(camera_id)
+        if camera.enabled:
+            registry.start(camera)
+
+    return {"status": "ok", "message": f"Da tu dong sinh {len(pairs)} cap quay dau", "pairs": pairs}
 
 
 # --- Lifecycle actions -----------------------------------------------------
@@ -656,25 +912,37 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
             # Metric road plane travel direction along road length (+Y axis)
             speed_rdir = [0.0, 1.0]
 
-        poly_found = False
-        for p in polygons:
-            if "homography" in p or p.get("id") in ("POLY_1", "POLY_SPEED"):
-                p["homography"] = {
-                    "src": payload.rectangle.image_points,
-                    "dst": world,
-                    "measured_at": datetime.now().isoformat(),
-                }
-                p["road_dir"] = speed_rdir
-                if payload.rectangle.road_dir_points:
-                    p["road_dir_points"] = payload.rectangle.road_dir_points
-                if not p.get("polygon"):
-                    p["polygon"] = payload.rectangle.image_points
-                p.setdefault("rules", {})["speeding"] = {"enable": True}
-                poly_found = True
-                break
-        if not poly_found:
+        speed_poly = next((
+            p for p in polygons
+            if isinstance(p, dict) and (
+                p.get("id", "").startswith("SPEED_")
+                or p.get("id") == "POLY_SPEED"
+                or (
+                    "homography" in p
+                    and not any(p.get("rules", {}).get(r, {}).get("enable") for r in ("no_uturn", "no_entry_road", "no_parking", "no_gathering", "red_light_running", "stop_line_violation"))
+                )
+            )
+        ), None)
+
+        if speed_poly:
+            speed_poly["homography"] = {
+                "src": payload.rectangle.image_points,
+                "dst": world,
+                "measured_at": datetime.now().isoformat(),
+            }
+            speed_poly["road_dir"] = speed_rdir
+            if payload.rectangle.road_dir_points:
+                speed_poly["road_dir_points"] = payload.rectangle.road_dir_points
+            if not speed_poly.get("polygon"):
+                speed_poly["polygon"] = payload.rectangle.image_points
+            speed_poly.setdefault("rules", {})["speeding"] = {"enable": True}
+        else:
+            used = {p.get("id") for p in polygons if isinstance(p, dict)}
+            s_idx = 1
+            while f"SPEED_{s_idx}" in used:
+                s_idx += 1
             new_p = {
-                "id": "POLY_1",
+                "id": f"SPEED_{s_idx}",
                 "kind": "directional",
                 "polygon": payload.rectangle.image_points,
                 "road_dir": speed_rdir,
@@ -689,11 +957,11 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                 new_p["road_dir_points"] = payload.rectangle.road_dir_points
             polygons.append(new_p)
 
-    # 2. Lines (Directed wrong_way lines and other lines)
+    # 2. Lines (Directed wrong_way lines, stop lines, etc.)
     if payload.lines is not None:
         for ln in payload.lines:
             lid = ln.get("id")
-            if not lid or lid == "STOP_1":
+            if not lid:
                 continue
             existing = next((l for l in lines if isinstance(l, dict) and l.get("id") == lid), None)
             if existing:
@@ -702,7 +970,26 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
             else:
                 lines.append(ln)
 
-    # 2. Stop Line
+    # 2.2. Signals from payload.signals
+    if payload.signals is not None:
+        for s in payload.signals:
+            sid = s.get("id")
+            if not sid:
+                continue
+            if "box" in s and "roi" not in s:
+                s["roi"] = s["box"]
+            elif "roi" in s and "box" not in s:
+                s["box"] = s["roi"]
+            if "ttl_s" not in s:
+                s["ttl_s"] = 1.0
+            existing = next((sig for sig in signals if isinstance(sig, dict) and sig.get("id") == sid), None)
+            if existing:
+                idx = signals.index(existing)
+                signals[idx] = s
+            else:
+                signals.append(s)
+
+    # 2. Stop Line (single draft stop line)
     if payload.stop_line and len(payload.stop_line) == 2:
         stop_line_item = {
             "id": "STOP_1",
@@ -710,13 +997,15 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
             "p2": payload.stop_line[1],
             "pt1": payload.stop_line[0],
             "pt2": payload.stop_line[1],
+            "role": "stop",
+            "allowed_sign": 1,
         }
         lines = [ln for ln in lines if ln.get("id") != "STOP_1"]
         lines.append(stop_line_item)
     elif payload.deleted_line_ids and "STOP_1" in payload.deleted_line_ids:
         lines = [ln for ln in lines if ln.get("id") != "STOP_1"]
 
-    # 3. Traffic Light Box
+    # 3. Traffic Light Box (single draft light box)
     if payload.light_box and len(payload.light_box) == 4:
         coords = [float(x) for x in payload.light_box]
         sig_item = {
@@ -724,11 +1013,24 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
             "roi": coords,
             "box": coords,
             "default": "red",
+            "ttl_s": 1.0,
         }
         signals = [s for s in signals if s.get("id") != "SIGNAL_1"]
         signals.append(sig_item)
     elif payload.deleted_signal_ids and "SIGNAL_1" in payload.deleted_signal_ids:
         signals = [s for s in signals if s.get("id") != "SIGNAL_1"]
+
+    # Auto-link signals and stop lines
+    if signals:
+        first_sid = signals[0].get("id", "SIGNAL_1")
+        for ln in lines:
+            if isinstance(ln, dict):
+                is_stop = ln.get("role") == "stop" or "STOP" in str(ln.get("id", "")).upper()
+                if is_stop:
+                    ln.setdefault("role", "stop")
+                    ln.setdefault("allowed_sign", 1)
+                    if not ln.get("signal_id"):
+                        ln["signal_id"] = first_sid
 
     # 4. Lanes (Wrong way)
     if payload.lanes:
@@ -828,18 +1130,34 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                 }
                 if lines_for_poly:
                     item["lines"] = lines_for_poly
+            elif rz.rule_type in ("red_light", "red_light_running", "stop_line", "stop_line_violation"):
+                item = {
+                    "id": zone_id,
+                    "kind": "directional",
+                    "polygon": rz.polygon,
+                    "rules": {
+                        "red_light_running": {"enable": True},
+                        "stop_line_violation": {"enable": True},
+                    },
+                }
             elif rz.rule_type in ("no_uturn", "no_entry_road", "no_parking", "no_gathering"):
                 r_cfg = {"enable": True}
-                if rz.dwell_s is not None:
+                if rz.dwell_s is not None and rz.rule_type in ("no_entry_road", "no_parking", "no_gathering"):
                     r_cfg["dwell_s"] = float(rz.dwell_s)
-                if rz.min_persons is not None:
+                if rz.min_persons is not None and rz.rule_type == "no_gathering":
                     r_cfg["min_persons"] = int(rz.min_persons)
                 item = {
                     "id": zone_id,
-                    "kind": "banned" if rz.rule_type in ("no_entry_road", "no_parking") else "zone",
+                    "kind": "banned" if rz.rule_type in ("no_entry_road", "no_parking") else ("directional" if rz.rule_type == "no_uturn" else "zone"),
                     "polygon": rz.polygon,
                     "rules": {rz.rule_type: r_cfg},
                 }
+                if rz.rule_type == "no_uturn":
+                    u_lines = [l for l in config.get("lines", []) if isinstance(l, dict) and (l.get("role") == "uturn" or "UTURN" in str(l.get("id", "")).upper())]
+                    item.setdefault("lines", [])
+                    if len(u_lines) >= 2:
+                        a, b = u_lines[0]["id"], u_lines[1]["id"]
+                        item["uturn_pairs"] = [{"first": a, "second": b}, {"first": b, "second": a}]
             else:
                 continue
 
@@ -847,11 +1165,50 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
                 idx = polygons.index(existing)
                 # merge rules to preserve any other active rule flags
                 old_rules = dict(existing.get("rules", {}))
+                if rz.rule_type != "speeding":
+                    old_rules.pop("speeding", None)
+                    existing.pop("homography", None)
+                    existing.pop("road_dir", None)
+                    existing.pop("road_dir_points", None)
                 old_rules.update(item.get("rules", {}))
                 item["rules"] = old_rules
                 polygons[idx] = item
             else:
                 polygons.append(item)
+
+    # 5.1 Clearance Zone for red light running (Intersection area)
+    if payload.clearance_zone is not None:
+        if len(payload.clearance_zone) >= 3:
+            inter_poly = next((p for p in polygons if p.get("kind") == "intersection" or p.get("id") == "POLY_INTERSECTION"), None)
+            if inter_poly:
+                inter_poly["polygon"] = payload.clearance_zone
+                inter_poly["kind"] = "intersection"
+                inter_poly.pop("rules", None)
+            else:
+                polygons.append({
+                    "id": "POLY_INTERSECTION",
+                    "kind": "intersection",
+                    "polygon": payload.clearance_zone,
+                    "rules": {},
+                })
+            config.setdefault("red_light", {})["intersection_clearance_zone"] = "POLY_INTERSECTION"
+            config.setdefault("red_light_running", {})["intersection_clearance_zone"] = "POLY_INTERSECTION"
+        elif len(payload.clearance_zone) == 0:
+            polygons = [p for p in polygons if p.get("kind") != "intersection" and p.get("id") != "POLY_INTERSECTION"]
+            if "red_light" in config:
+                config["red_light"].pop("intersection_clearance_zone", None)
+            if "red_light_running" in config:
+                config["red_light_running"].pop("intersection_clearance_zone", None)
+
+    # Synchronize uturn_pairs in config if there are uturn lines
+    all_u_lines = [l for l in lines if isinstance(l, dict) and (l.get("role") == "uturn" or "UTURN" in str(l.get("id", "")).upper())]
+    if len(all_u_lines) >= 2:
+        u_pairs = config.setdefault("uturn_pairs", [])
+        a, b = all_u_lines[0]["id"], all_u_lines[1]["id"]
+        if not any(isinstance(p, dict) and p.get("first") == a and p.get("second") == b for p in u_pairs):
+            u_pairs.append({"first": a, "second": b})
+        if not any(isinstance(p, dict) and p.get("first") == b and p.get("second") == a for p in u_pairs):
+            u_pairs.append({"first": b, "second": a})
 
     config["polygons"] = polygons
     config["lines"] = lines
@@ -859,6 +1216,23 @@ def calibrate_camera(camera_id: str, payload: CalibrationRequest, db: Session = 
         config.setdefault("wrong_way", {})["enable"] = True
     if signals:
         config["signals"] = signals
+
+    has_stop = any(
+        isinstance(ln, dict) and (ln.get("role") == "stop" or "STOP" in str(ln.get("id", "")).upper() or bool(ln.get("signal_id")))
+        for ln in lines
+    )
+    if signals or has_stop:
+        config.setdefault("red_light", {})["enable"] = True
+        config.setdefault("stop_line", {})["enable"] = True
+        config.setdefault("red_light_running", {})["enable"] = True
+        config.setdefault("stop_line_violation", {})["enable"] = True
+
+    if payload.red_light:
+        config.setdefault("red_light", {}).update(payload.red_light)
+        config.setdefault("red_light_running", {}).update(payload.red_light)
+    if payload.stop_line_config:
+        config.setdefault("stop_line", {}).update(payload.stop_line_config)
+        config.setdefault("stop_line_violation", {}).update(payload.stop_line_config)
 
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(config, f, default_flow_style=False)

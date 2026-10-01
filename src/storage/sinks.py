@@ -19,7 +19,28 @@ def handle_event(e, *, frame, all_lines, names, out_dir, camera_id,
     """Luu file local. Tra ve (jpg_path, json_path).
     Loi ghi file -> raise de caller bo event."""
     tri = e["extra"].pop("triptych", None)
-    if tri is not None:
+    ev_type = e.get("type")
+
+    # Voi stop_line_violation: Chi can luu 1 frame de vach (cross_frame / shot 1 trong triptych)
+    if ev_type in ("stop_line_violation", "stop_line"):
+        target_fr = None
+        if tri is not None and len(tri) > 0 and tri[0] is not None:
+            target_fr = tri[0]
+            bboxes = e.get("extra", {}).get("triptych_bboxes") or []
+            if bboxes and bboxes[0] is not None:
+                e["bbox"] = bboxes[0]
+            bcs = e.get("extra", {}).get("triptych_bcs") or []
+            if bcs and bcs[0] is not None:
+                e["bc"] = bcs[0]
+        if target_fr is None:
+            target_fr = e["extra"].pop("evidence_frame", None)
+        target = target_fr if target_fr is not None else frame
+        jp, js = save_event(
+            target, e, all_lines, names,
+            out_dir=out_dir, camera_id=camera_id,
+            config_version=config_version, model_version=model_version,
+            jpeg_quality=jpeg_quality, timezone_name=timezone_name)
+    elif tri is not None:
         jp, js = save_triptych(
             tri, frame, e, all_lines, names,
             out_dir=out_dir, camera_id=camera_id,
@@ -108,4 +129,3 @@ def maybe_prune(ev_dir, camera_id, retention_days, last, now,
             logging.info("Prune evidence cu: %s", d)
     except Exception:
         logging.exception("Prune evidence loi (bo qua)")
-    return now

@@ -241,7 +241,7 @@ class TrafficPipelineEngine:
                 )
 
         # Traffic signals & visualizer
-        red_cfg = cfg.get("red_light", {})
+        red_cfg = cfg.get("red_light") or cfg.get("red_light_running") or {}
         self.signals = SignalStore(cfg.get("signals", []), red_cfg, wall_min=now_minutes(self.tz))
         self.all_lines = list(iter_all_lines(cfg))
         self.vis_renderer = Visualizer(lines=self.all_lines, polygons=polys, names=self.tracker.names)

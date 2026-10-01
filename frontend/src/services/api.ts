@@ -99,6 +99,24 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(line),
     }),
+  flipCameraLine: (id: string, lineId: string) =>
+    request<{ status: string; message: string; line: any }>(`/api/cameras/${id}/config/lines/${lineId}/flip`, {
+      method: "POST",
+    }),
+  saveUturnPair: (id: string, pair: { first: string; second: string }) =>
+    request<{ status: string; message: string; pairs: any[] }>(`/api/cameras/${id}/config/pairs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pair),
+    }),
+  deleteUturnPair: (id: string, first: string, second: string) =>
+    request<{ status: string; message: string; pairs: any[] }>(`/api/cameras/${id}/config/pairs?first=${encodeURIComponent(first)}&second=${encodeURIComponent(second)}`, {
+      method: "DELETE",
+    }),
+  autoGenerateUturnPairs: (id: string) =>
+    request<{ status: string; message: string; pairs: any[] }>(`/api/cameras/${id}/config/pairs/auto`, {
+      method: "POST",
+    }),
   saveCameraSignal: (id: string, sig: any) =>
     request<{ status: string; message: string; signal: any }>(`/api/cameras/${id}/config/signals`, {
       method: "POST",
@@ -178,6 +196,8 @@ export interface CameraConfig {
   no_parking?: Record<string, any>;
   no_uturn?: Record<string, any>;
   wrong_way?: Record<string, any>;
+  red_light?: Record<string, any>;
+  red_light_running?: Record<string, any>;
   uturn_pairs?: Array<{ first: string; second: string; medial?: string; [key: string]: any }>;
 }
 
@@ -198,9 +218,13 @@ export interface RuleZoneConfig {
 export interface CalibrationRequest {
   rectangle?: CalibrationRectangle;
   stop_line?: number[][];
+  clearance_zone?: number[][];
   lanes?: CalibrationLane[];
   light_box?: number[] | null;
   lines?: Array<{ id: string; p1: number[]; p2: number[]; allowed_sign?: number; role?: string; signal_id?: string }>;
+  signals?: Array<{ id: string; roi?: number[]; box?: number[]; default?: string; ttl_s?: number }>;
+  red_light?: Record<string, any>;
+  stop_line_config?: Record<string, any>;
   rule_zones?: RuleZoneConfig[];
   deleted_polygon_ids?: string[];
   deleted_line_ids?: string[];

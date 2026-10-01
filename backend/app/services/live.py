@@ -117,7 +117,7 @@ class LiveCameraWorker:
                 self._run_loop(cap)
             except Exception as exc:
                 self._set_status(ERROR, error=f"{type(exc).__name__}: {exc}")
-                traceback.print_exc()
+                logging.warning("Live camera %s error: %s (reconnecting in %.1fs)", self.camera_id, exc, backoff)
             finally:
                 try:
                     self.source.close()
@@ -201,9 +201,13 @@ class LiveCameraWorker:
 
                 self.active_vehicles = len(tracks)
 
-                # Render overlays
+                # 1. Persist new events FIRST using clean, unannotated frame
+                for event in new_events:
+                    self._persist_event(event, frame, engine)
+
+                # 2. Render visualizer overlays on a copy of frame for live MJPEG streaming
                 annotated = engine.vis_renderer.render(
-                    frame,
+                    frame.copy(),
                     tracks,
                     fps=self.measured_fps or self.fps_hint,
                     counts=engine.counts,
@@ -215,9 +219,6 @@ class LiveCameraWorker:
                 )
 
                 self._encode_jpeg(annotated)
-
-                for event in new_events:
-                    self._persist_event(event, frame, engine)
 
                 if new_events:
                     self._push_status(force=True)
@@ -266,6 +267,7 @@ class LiveCameraWorker:
         # Save screenshot with ONLY violating bounding box
         sc_rel = f"evidence/screenshots/{slug}.jpg"
         sc_abs = self.evidence_dir / sc_rel
+        sc_abs.parent.mkdir(parents=True, exist_ok=True)
         all_lines = getattr(engine, "all_lines", None) if engine else None
         plan_polys = (
             getattr(getattr(engine, "vis_renderer", None), "polygons", None)
@@ -277,7 +279,7 @@ class LiveCameraWorker:
             lines=all_lines,
             polygons=plan_polys,
         )
-        cv2.imwrite(str(sc_abs), ev_vis)
+        cv2.imwrite(str(sc_abs), ev_vis, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
         extra = dict(event.get("extra", {}) or {})
         speed_kmh = extra.get("speed_kmh")

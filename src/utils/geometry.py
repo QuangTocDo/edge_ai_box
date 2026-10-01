@@ -201,3 +201,11 @@ def now_minutes(tzname="Asia/Ho_Chi_Minh"):
         tz = timezone(timedelta(hours=7))
     now = datetime.now(tz)
     return now.hour * 60 + now.minute
+
+
+def seg_intersect(p1, p2, p3, p4):
+    """Kiem tra 2 doan thang p1->p2 va p3->p4 co cat nhau hay khong."""
+    return crossing_sign(p1, p2, p3, p4) != 0
+
+
+dist_pt_seg = distance_point_to_segment

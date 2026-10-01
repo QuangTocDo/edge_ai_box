@@ -117,7 +117,7 @@ class RuleZoneConfig(BaseModel):
     box: Optional[List[float]] = None
     arrow: Optional[List[List[float]]] = None
     road_dir: Optional[List[float]] = None
-    speed_limit_kmh: Optional[float] = 50.0
+    speed_limit_kmh: Optional[float] = None
     dwell_s: Optional[float] = None
     min_persons: Optional[int] = None
     enabled: bool = True
@@ -130,6 +130,7 @@ class RawConfigRequest(BaseModel):
 class CalibrationRequest(BaseModel):
     rectangle: Optional[CalibrationRectangle] = None
     stop_line: Optional[List[List[float]]] = None  # two image points
+    clearance_zone: Optional[List[List[float]]] = None  # polygon >= 3 points
     lanes: List[CalibrationLane] = []
     light_box: Optional[List[float]] = None  # [x1, y1, x2, y2] image pixels
     rule_zones: Optional[List[RuleZoneConfig]] = None
@@ -137,6 +138,9 @@ class CalibrationRequest(BaseModel):
     deleted_line_ids: Optional[List[str]] = None
     lines: Optional[List[Dict[str, Any]]] = None
     deleted_signal_ids: Optional[List[str]] = None
+    signals: Optional[List[Dict[str, Any]]] = None
+    red_light: Optional[Dict[str, Any]] = None
+    stop_line_config: Optional[Dict[str, Any]] = None
 
 
 class HomographyPreview(BaseModel):

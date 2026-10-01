@@ -223,6 +223,7 @@ class RedLightRunningRule(BaseRule):
                 }
                 if triptych:
                     ev["extra"]["triptych"] = triptych
+                    ev["extra"]["triptych_captions"] = ["1 TRUOC VACH", "2 DE VACH", "3 DI VAO GIAO LO"]
                 return ev
 
             # Case 2: Khong co clearance -> Movement / Velocity Confirmation
@@ -292,6 +293,7 @@ class RedLightRunningRule(BaseRule):
                         ]
                         ev["extra"]["triptych_bboxes"] = [shot1_bb, c["cross_bbox"], curr_bb]
                         ev["extra"]["triptych_bcs"] = [shot1_bc, c["cross_bc"], curr]
+                        ev["extra"]["triptych_captions"] = ["1 TRUOC VACH", "2 DE VACH", "3 DI VAO GIAO LO"]
                     else:
                         ev["extra"]["evidence_frame"] = c.get("cross_frame")
 

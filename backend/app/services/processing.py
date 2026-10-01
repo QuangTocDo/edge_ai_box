@@ -51,7 +51,17 @@ def clean_metadata_for_json(obj: Any) -> Any:
         cleaned = {}
         for k, v in obj.items():
             # Drop heavy image/video frame buffers
-            if k in {"triptych", "video_frames", "evidence_frame", "start_frame", "peak_frame", "crop"}:
+            if k in {
+                "triptych",
+                "video_frames",
+                "evidence_frame",
+                "cross_frame",
+                "shot1",
+                "shot3",
+                "start_frame",
+                "peak_frame",
+                "crop",
+            }:
                 continue
             if k == "pedestrian_crops" and isinstance(v, list):
                 cleaned[k] = [
@@ -88,27 +98,15 @@ def clean_metadata_for_json(obj: Any) -> Any:
         return float(obj)
     if isinstance(obj, (np.bool_, bool)):
         return bool(obj)
-    if isinstance(obj, set):
-        return [clean_metadata_for_json(x) for x in obj]
-    if isinstance(obj, Path):
-        return str(obj)
-    if hasattr(obj, "to_dict"):
-        return clean_metadata_for_json(obj.to_dict())
-    if hasattr(obj, "tolist"):
-        try:
-            arr = obj.tolist()
-            if isinstance(arr, list) and len(arr) > 0 and isinstance(arr[0], list):
-                return None
-            return arr
-        except Exception:
-            pass
-
     return obj
 
 
 def safe_json_dumps(obj: Any) -> str:
     cleaned = clean_metadata_for_json(obj)
-    return json.dumps(cleaned)
+    try:
+        return json.dumps(cleaned, ensure_ascii=False)
+    except Exception:
+        return "{}"
 
 
 def _draw_label_badge(
@@ -140,20 +138,19 @@ def _draw_label_badge(
     )
 
 
-def render_evidence_frame(
-    raw_frame: np.ndarray,
+def _annotate_single_evidence_shot(
+    base_frame: np.ndarray,
     event: Dict[str, Any],
+    bbox: Optional[Any] = None,
+    bc: Optional[Any] = None,
     lines: Optional[List[Dict[str, Any]]] = None,
     polygons: Optional[List[Dict[str, Any]]] = None,
+    badge_title: Optional[str] = None,
+    badge_subtitle: Optional[str] = None,
 ) -> np.ndarray:
-    """Render an evidence screenshot on a copy of the clean frame,
-    drawing ONLY the violating object's bounding box and violation markers,
-    leaving all other vehicles/pedestrians clean without bounding boxes.
-    """
-    img = raw_frame.copy()
+    """Helper to draw ONLY the designated vehicle bbox, bottom center, and line/polygon on a frame."""
+    img = base_frame.copy()
     h_img, w_img = img.shape[:2]
-    ev_type = str(event.get("type", "violation")).replace("_", " ").upper()
-    track_id = event.get("track_id", "")
     extra = event.get("extra") or {}
 
     # 1. If line_id is specified, draw the violated line
@@ -177,9 +174,149 @@ def render_evidence_frame(
                         cv2.line(img, a, b, (0, 0, 255), 3)
                 break
 
+    # 3. Draw ONLY the target vehicle bounding box and bottom-center
+    target_bb = bbox if bbox is not None else event.get("bbox")
+    if target_bb is not None and len(target_bb) == 4:
+        x1, y1, x2, y2 = [int(v) for v in target_bb]
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w_img - 1, x2), min(h_img - 1, y2)
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 3)
+
+        target_bc = bc if bc is not None else event.get("bc")
+        if target_bc is not None and len(target_bc) >= 2:
+            cv2.circle(img, (int(target_bc[0]), int(target_bc[1])), 5, (0, 255, 255), -1)
+
+        if badge_title:
+            _draw_label_badge(img, badge_title, x1, y1, bg_color=(0, 0, 220))
+        if badge_subtitle:
+            cv2.putText(
+                img,
+                badge_subtitle,
+                (max(10, x1), min(h_img - 10, y2 + 22)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
+
+    return img
+
+
+def render_evidence_frame(
+    raw_frame: np.ndarray,
+    event: Dict[str, Any],
+    lines: Optional[List[Dict[str, Any]]] = None,
+    polygons: Optional[List[Dict[str, Any]]] = None,
+) -> np.ndarray:
+    """Render an evidence screenshot on a copy of the clean frame,
+    drawing ONLY the violating object's bounding box and violation markers,
+    leaving all other vehicles/pedestrians clean without bounding boxes.
+
+    - For red light running: stacks 3 moments (1: before stop line, 2: touching stop line, 3: entering intersection).
+    - For stop line violation: captures ONLY the single frame when touching stop line.
+    - For other violations: captures the single clean frame with the violating object's bbox.
+    """
+    ev_type = str(event.get("type", "violation"))
+    track_id = event.get("track_id", "")
+    extra = event.get("extra") or {}
+    triptych = extra.get("triptych")
+
+    # 1. Red Light Running: Luu 3 khoanh khac (truoc vach, de vach, di vao giao lo)
+    if ev_type in ("red_light_running", "red_light"):
+        if triptych and isinstance(triptych, (list, tuple)) and len(triptych) >= 2:
+            caps = extra.get(
+                "triptych_captions",
+                ["1 TRUOC VACH", "2 DE VACH", "3 DI VAO GIAO LO"]
+                if len(triptych) >= 3
+                else ["1 DE VACH", "2 DI VAO GIAO LO"],
+            )
+            bboxes = extra.get("triptych_bboxes") or []
+            bcs = extra.get("triptych_bcs") or []
+            timestamps = extra.get("triptych_timestamps") or []
+
+            shots = []
+            for i, fr in enumerate(triptych[:3]):
+                shot_fr = fr if fr is not None else raw_frame
+                cap = caps[i] if i < len(caps) else f"SHOT {i+1}"
+                bb_i = bboxes[i] if i < len(bboxes) and bboxes[i] is not None else event.get("bbox")
+                bc_i = bcs[i] if i < len(bcs) and bcs[i] is not None else event.get("bc")
+                ts_i = timestamps[i] if i < len(timestamps) else event.get("t", 0.0)
+
+                badge = f"{cap} | ID {track_id}"
+                sub = (
+                    f"VUOT DEN DO | t={ts_i:.2f}s"
+                    if isinstance(ts_i, (int, float))
+                    else f"VUOT DEN DO | {ts_i}"
+                )
+                shot_img = _annotate_single_evidence_shot(
+                    shot_fr,
+                    event,
+                    bbox=bb_i,
+                    bc=bc_i,
+                    lines=lines,
+                    polygons=polygons,
+                    badge_title=badge,
+                    badge_subtitle=sub,
+                )
+                shots.append(shot_img)
+
+            w = max(s.shape[1] for s in shots)
+            norm = [
+                s if s.shape[1] == w else cv2.resize(s, (w, int(s.shape[0] * w / s.shape[1])))
+                for s in shots
+            ]
+            return cv2.vconcat(norm)
+
+    # 2. Stop Line Violation: CHI luu frame de vach (single frame)
+    if ev_type in ("stop_line_violation", "stop_line"):
+        cross_fr = None
+        cross_bb = None
+        cross_bc = None
+        cross_t = None
+
+        if triptych and isinstance(triptych, (list, tuple)) and len(triptych) > 0:
+            cross_fr = triptych[0]
+            bboxes = extra.get("triptych_bboxes") or []
+            if bboxes and bboxes[0] is not None:
+                cross_bb = bboxes[0]
+            bcs = extra.get("triptych_bcs") or []
+            if bcs and bcs[0] is not None:
+                cross_bc = bcs[0]
+            ts = extra.get("triptych_timestamps") or []
+            if ts and ts[0] is not None:
+                cross_t = ts[0]
+
+        if cross_fr is None:
+            cross_fr = extra.get("cross_frame") or extra.get("evidence_frame") or raw_frame
+        if cross_bb is None:
+            cross_bb = extra.get("cross_bbox") or event.get("bbox")
+        if cross_bc is None:
+            cross_bc = extra.get("cross_bc") or event.get("bc")
+        if cross_t is None:
+            cross_t = event.get("t", 0.0)
+
+        badge = f"DE VACH DUNG | ID {track_id}"
+        sub = (
+            f"STOP LINE | t={cross_t:.2f}s"
+            if isinstance(cross_t, (int, float))
+            else f"STOP LINE | {cross_t}"
+        )
+        return _annotate_single_evidence_shot(
+            cross_fr,
+            event,
+            bbox=cross_bb,
+            bc=cross_bc,
+            lines=lines,
+            polygons=polygons,
+            badge_title=badge,
+            badge_subtitle=sub,
+        )
+
     # 3. Handle Gathering violations
-    if event.get("type") == "no_gathering":
-        # Draw bboxes of gathering persons only
+    if ev_type == "no_gathering":
+        img = raw_frame.copy()
+        h_img, w_img = img.shape[:2]
         person_bboxes = extra.get("person_bboxes") or []
         for pbb in person_bboxes:
             if pbb and len(pbb) == 4:
@@ -198,28 +335,21 @@ def render_evidence_frame(
         return img
 
     # 4. Standard vehicle violation: Draw ONLY the violating vehicle bbox
-    bbox = event.get("bbox")
-    if bbox is not None and len(bbox) == 4:
-        x1, y1, x2, y2 = [int(v) for v in bbox]
-        x1, y1 = max(0, x1), max(0, y1)
-        x2, y2 = min(w_img - 1, x2), min(h_img - 1, y2)
+    ev_title = ev_type.replace("_", " ").upper()
+    badge = f"VIOLATION: {ev_title} | ID {track_id}"
+    speed_kmh = extra.get("speed_kmh")
+    sub = f"SPEED: {speed_kmh:.1f} km/h" if speed_kmh else None
 
-        # Draw red violation bounding box
-        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 3)
-
-        # Bottom center point
-        bc = event.get("bc")
-        if bc is not None and len(bc) >= 2:
-            cv2.circle(img, (int(bc[0]), int(bc[1])), 5, (0, 255, 255), -1)
-
-        # Label badge
-        label = f"VIOLATION: {ev_type} | ID {track_id}"
-        speed_kmh = extra.get("speed_kmh")
-        if speed_kmh:
-            label += f" | {speed_kmh:.1f} km/h"
-        _draw_label_badge(img, label, x1, y1, bg_color=(0, 0, 220))
-
-    return img
+    return _annotate_single_evidence_shot(
+        raw_frame,
+        event,
+        bbox=event.get("bbox"),
+        bc=event.get("bc"),
+        lines=lines,
+        polygons=polygons,
+        badge_title=badge,
+        badge_subtitle=sub,
+    )
 
 
 def process_job(job_id: str) -> None:
@@ -297,20 +427,7 @@ def process_job(job_id: str) -> None:
             else:
                 tracks, new_events = res
 
-            vis = engine.vis_renderer.render(
-                frame,
-                tracks,
-                fps=fps_src,
-                counts=engine.counts,
-                frame_idx=frame_idx,
-                t_video=t_video,
-                signals=engine.signals,
-                pedestrians=engine.last_peds,
-                gathering_zones=engine.gathering_status,
-            )
-            writer.write(vis)
-
-            # Handle events
+            # Handle events FIRST using pristine, unannotated frame
             if new_events:
                 all_lines = getattr(engine, "all_lines", None)
                 plan_polys = (
@@ -330,13 +447,14 @@ def process_job(job_id: str) -> None:
                     # Save screenshot with ONLY violating bounding box
                     sc_rel = f"evidence/screenshots/{slug}.jpg"
                     sc_abs = output_dir / sc_rel
+                    sc_abs.parent.mkdir(parents=True, exist_ok=True)
                     ev_vis = render_evidence_frame(
                         frame,
                         ev,
                         lines=all_lines,
                         polygons=plan_polys,
                     )
-                    cv2.imwrite(str(sc_abs), ev_vis)
+                    cv2.imwrite(str(sc_abs), ev_vis, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
                     ev_info = {
                         "type": ev_type,
@@ -351,6 +469,20 @@ def process_job(job_id: str) -> None:
                         "line_id": ev.get("line_id"),
                     }
                     events_collected.append(ev_info)
+
+            # Render overlay on a copy of the frame for the annotated video
+            vis = engine.vis_renderer.render(
+                frame.copy(),
+                tracks,
+                fps=fps_src,
+                counts=engine.counts,
+                frame_idx=frame_idx,
+                t_video=t_video,
+                signals=engine.signals,
+                pedestrians=engine.last_peds,
+                gathering_zones=engine.gathering_status,
+            )
+            writer.write(vis)
 
             # Periodic progress update
             if frame_idx % 10 == 0 or frame_idx == total_frames:
@@ -478,7 +610,3 @@ def process_job(job_id: str) -> None:
                 job.completed_at = datetime.now(timezone.utc)
                 db.commit()
         traceback.print_exc()
-        manager.broadcast_from_thread(
-            job_id,
-            {"type": "failed", "status": "failed", "error_message": str(exc)},
-        )
