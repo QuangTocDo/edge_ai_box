@@ -290,7 +290,12 @@ def process_job(job_id: str) -> None:
             frame_idx += 1
             t_video = (frame_idx - 1) / fps_src
 
-            tracks, new_events = engine.process_frame(frame, frame_idx, t_video)
+            res = engine.process_frame(frame, frame_idx, t_video)
+            if isinstance(res, dict):
+                tracks = res.get("tracks", {})
+                new_events = res.get("events", [])
+            else:
+                tracks, new_events = res
 
             vis = engine.vis_renderer.render(
                 frame,
@@ -308,7 +313,10 @@ def process_job(job_id: str) -> None:
             # Handle events
             if new_events:
                 all_lines = getattr(engine, "all_lines", None)
-                plan_polys = getattr(getattr(engine, "plan", None), "polygons", None)
+                plan_polys = (
+                    getattr(getattr(engine, "vis_renderer", None), "polygons", None)
+                    or (engine.cfg.get("polygons", []) if hasattr(engine, "cfg") else None)
+                )
 
                 for ev in new_events:
                     ev_type = str(ev.get("type", "violation"))

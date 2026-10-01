@@ -267,7 +267,10 @@ class LiveCameraWorker:
         sc_rel = f"evidence/screenshots/{slug}.jpg"
         sc_abs = self.evidence_dir / sc_rel
         all_lines = getattr(engine, "all_lines", None) if engine else None
-        plan_polys = getattr(getattr(engine, "plan", None), "polygons", None) if engine else None
+        plan_polys = (
+            getattr(getattr(engine, "vis_renderer", None), "polygons", None)
+            or (engine.cfg.get("polygons", []) if hasattr(engine, "cfg") else None)
+        ) if engine else None
         ev_vis = render_evidence_frame(
             raw_frame,
             event,

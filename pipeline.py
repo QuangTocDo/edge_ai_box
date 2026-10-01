@@ -18,7 +18,7 @@ GLOBAL_ENGINE = None
 def _on_stop(signum, frame):
     global GLOBAL_ENGINE
     if GLOBAL_ENGINE is not None:
-        GLOBAL_ENGINE.stop()
+       GLOBAL_ENGINE.stop()
 
 
 def parse_args():
